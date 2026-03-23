@@ -1,1 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
 venv/
+.venv/
+env/
+.env/
+
+# MediaPipe / ML model files
+*.task
+*.tflite
+*.pkl
+*.h5
+*.pt
+*.pth
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# Logs
+*.log
+logs/
+
+# Node (frontend)
+frontend/node_modules/
+frontend/build/
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# React build output
+frontend/build/
+
+# Misc
+*.zip
+*.tar.gz
+.idea/
