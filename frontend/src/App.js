@@ -1,25 +1,24 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 const EXERCISES = [
-  { id: "pushup",      label: "Push Up",     icon: "💪", desc: "Side view recommended" },
-  { id: "squat",       label: "Squat",        icon: "🦵", desc: "Side view recommended" },
-  { id: "lunges",      label: "Lunges",       icon: "🏃", desc: "Side view recommended" },
-  { id: "plank",       label: "Plank",        icon: "🧘", desc: "Side view — shows hold time" },
-  { id: "shouldertap", label: "Shoulder Tap", icon: "👋", desc: "Front view recommended" },
+  { id: "pushup", label: "Push Up", icon: "💪", desc: "Side view recommended" },
+  { id: "squat",  label: "Squat",   icon: "🦵", desc: "Side view recommended" },
+  { id: "lunges", label: "Lunges",  icon: "🏃", desc: "Side view recommended" },
+  { id: "plank",  label: "Plank",   icon: "🧘", desc: "Side view — shows hold time" },
 ];
 
 const WS_URL = "ws://localhost:8000/ws";
 
 export default function App() {
-  const [selected, setSelected]   = useState(null);
-  const [running, setRunning]     = useState(false);
-  const [count, setCount]         = useState(0);
-  const [stage, setStage]         = useState("--");
-  const [depthPct, setDepthPct]   = useState(0);
-  const [feedbacks, setFeedbacks] = useState([]);
+  const [selected, setSelected]             = useState(null);
+  const [running, setRunning]               = useState(false);
+  const [count, setCount]                   = useState(0);
+  const [stage, setStage]                   = useState("--");
+  const [depthPct, setDepthPct]             = useState(0);
+  const [feedbacks, setFeedbacks]           = useState([]);
   const [processedFrame, setProcessedFrame] = useState(null);
-  const [wsStatus, setWsStatus]   = useState("idle");
-  const [camError, setCamError]   = useState(null);
+  const [wsStatus, setWsStatus]             = useState("idle");
+  const [camError, setCamError]             = useState(null);
 
   const videoRef    = useRef(null);
   const canvasRef   = useRef(null);
@@ -27,39 +26,30 @@ export default function App() {
   const streamRef   = useRef(null);
   const intervalRef = useRef(null);
 
+  // Cleanup on unmount
   useEffect(() => () => stopSession(), []);
 
-  const startCamera = () => {
-    return new Promise((resolve, reject) => {
-      navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
-        .then((stream) => {
-          streamRef.current = stream;
-          const video = videoRef.current;
-          if (video) {
-            video.srcObject = stream;
-            video.onloadedmetadata = () => {
-              video.play()
-                .then(() => resolve())
-                .catch(reject);
-            };
-          } else {
-            reject(new Error("videoRef not ready"));
-          }
-        })
-        .catch(reject);
-    });
-  };
+  // ── Camera ────────────────────────────────────────────────────────────────
+  const startCamera = () => new Promise((resolve, reject) => {
+    navigator.mediaDevices
+      .getUserMedia({ video: { width: 640, height: 480 } })
+      .then((stream) => {
+        streamRef.current = stream;
+        const video = videoRef.current;
+        if (!video) { reject(new Error("videoRef not ready")); return; }
+        video.srcObject = stream;
+        video.onloadedmetadata = () => video.play().then(resolve).catch(reject);
+      })
+      .catch(reject);
+  });
 
   const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
   };
 
+  // ── Frame capture ─────────────────────────────────────────────────────────
   const captureFrame = useCallback(() => {
     const video  = videoRef.current;
     const canvas = canvasRef.current;
@@ -70,11 +60,11 @@ export default function App() {
     if (w === 0 || h === 0) return null;
     canvas.width  = w;
     canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(video, 0, 0, w, h);
+    canvas.getContext("2d").drawImage(video, 0, 0, w, h);
     return canvas.toDataURL("image/jpeg", 0.7);
   }, []);
 
+  // ── Session control ───────────────────────────────────────────────────────
   const startSession = async () => {
     if (!selected) return;
     setCamError(null);
@@ -86,7 +76,7 @@ export default function App() {
       await startCamera();
     } catch (err) {
       console.error("Camera error:", err);
-      setCamError("Camera access denied or not available. Please allow camera permissions.");
+      setCamError("Camera access denied. Please allow camera permissions and try again.");
       setWsStatus("error");
       return;
     }
@@ -97,6 +87,7 @@ export default function App() {
     ws.onopen = () => {
       setWsStatus("connected");
       setRunning(true);
+      // Small delay so video stream fully initialises before sending frames
       setTimeout(() => {
         intervalRef.current = setInterval(() => {
           if (ws.readyState !== WebSocket.OPEN) return;
@@ -106,8 +97,8 @@ export default function App() {
           } catch (e) {
             console.error("Frame capture error:", e);
           }
-        }, 100);
-      }, 500);
+        }, 100); // 10 fps
+      }, 600);
     };
 
     ws.onmessage = (e) => {
@@ -119,8 +110,8 @@ export default function App() {
         setStage(data.stage);
         setDepthPct(data.depth_pct);
         setFeedbacks(data.feedbacks || []);
-      } catch (e) {
-        console.error("WS message parse error:", e);
+      } catch (err) {
+        console.error("WS parse error:", err);
       }
     };
 
@@ -130,7 +121,8 @@ export default function App() {
 
   const stopSession = () => {
     clearInterval(intervalRef.current);
-    if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
+    wsRef.current?.close();
+    wsRef.current = null;
     stopCamera();
     setRunning(false);
     setWsStatus("idle");
@@ -150,10 +142,11 @@ export default function App() {
 
   const exercise = EXERCISES.find(e => e.id === selected);
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={styles.root}>
 
-      {/* ── Header ── */}
+      {/* Header */}
       <header style={styles.header}>
         <div style={styles.logo}>
           <span style={styles.logoAccent}>FORM</span>
@@ -164,7 +157,10 @@ export default function App() {
 
       <main style={styles.main}>
 
-        {/* ── Always mount video + canvas so ref is ready before session starts ── */}
+        {/*
+          Always mount hidden video + canvas so refs are valid
+          before the session starts — fixes camera black screen bug
+        */}
         <video
           ref={videoRef}
           style={{ display: "none" }}
@@ -191,7 +187,13 @@ export default function App() {
                 </button>
               ))}
             </div>
-            {camError && <div style={{ ...styles.errorBanner, margin: "0 0 20px 0" }}>⚠️ {camError}</div>}
+
+            {camError && (
+              <div style={{ ...styles.errorBanner, margin: "0 0 20px 0" }}>
+                ⚠️ {camError}
+              </div>
+            )}
+
             <button
               onClick={startSession}
               disabled={!selected}
@@ -206,41 +208,51 @@ export default function App() {
         {running && (
           <section style={styles.sessionLayout}>
 
-            {/* Left — Video */}
+            {/* Left — Video feed */}
             <div style={styles.videoCol}>
               <div style={styles.videoWrapper}>
-                {/* Show raw camera if no processed frame yet */}
-                {!processedFrame && (
-                  <video
-                    srcObject={streamRef.current}
-                    style={{ ...styles.videoImg, position: "absolute", top: 0, left: 0, zIndex: 1 }}
-                    muted
-                    playsInline
-                    autoPlay
-                    ref={(el) => {
-                      if (el && streamRef.current) {
-                        el.srcObject = streamRef.current;
-                      }
-                    }}
-                  />
-                )}
-                {/* Processed frame from backend */}
+
+                {/* Raw camera shown until first processed frame arrives */}
+                <video
+                  ref={(el) => {
+                    if (el && streamRef.current && el.srcObject !== streamRef.current) {
+                      el.srcObject = streamRef.current;
+                    }
+                  }}
+                  style={{
+                    ...styles.videoImg,
+                    position: "absolute", top: 0, left: 0,
+                    zIndex: 1,
+                    display: processedFrame ? "none" : "block",
+                  }}
+                  muted
+                  playsInline
+                  autoPlay
+                />
+
+                {/* Processed frame with pose overlay from backend */}
                 {processedFrame && (
                   <img
                     src={processedFrame}
                     alt="pose"
-                    style={{ ...styles.videoImg, position: "absolute", top: 0, left: 0, zIndex: 2 }}
+                    style={{
+                      ...styles.videoImg,
+                      position: "absolute", top: 0, left: 0,
+                      zIndex: 2,
+                    }}
                   />
                 )}
+
                 <div style={{ ...styles.videoLabel, zIndex: 3 }}>
                   {exercise?.icon} {exercise?.label}
                 </div>
               </div>
             </div>
 
-            {/* Right — Stats */}
+            {/* Right — Stats panel */}
             <div style={styles.statsCol}>
 
+              {/* Rep / Time counter */}
               <div style={styles.counterCard}>
                 <p style={styles.counterLabel}>
                   {selected === "plank" ? "HOLD TIME" : "REPS"}
@@ -249,20 +261,20 @@ export default function App() {
                 <span style={styles.stageTag(stage)}>{stage}</span>
               </div>
 
-              {selected !== "shouldertap" && (
-                <div style={styles.depthCard}>
-                  <div style={styles.depthHeader}>
-                    <span style={styles.depthLabel}>
-                      {selected === "plank" ? "ALIGNMENT" : "DEPTH"}
-                    </span>
-                    <span style={styles.depthPct}>{depthPct}%</span>
-                  </div>
-                  <div style={styles.depthTrack}>
-                    <div style={styles.depthFill(depthPct)} />
-                  </div>
+              {/* Depth / Alignment bar */}
+              <div style={styles.depthCard}>
+                <div style={styles.depthHeader}>
+                  <span style={styles.depthLabel}>
+                    {selected === "plank" ? "ALIGNMENT" : "DEPTH"}
+                  </span>
+                  <span style={styles.depthPct}>{depthPct}%</span>
                 </div>
-              )}
+                <div style={styles.depthTrack}>
+                  <div style={styles.depthFill(depthPct)} />
+                </div>
+              </div>
 
+              {/* Feedback messages */}
               <div style={styles.feedbackCard}>
                 <p style={styles.feedbackTitle}>FEEDBACK</p>
                 {feedbacks.length === 0
@@ -278,6 +290,7 @@ export default function App() {
                 }
               </div>
 
+              {/* Controls */}
               <div style={styles.controls}>
                 <button onClick={resetCount} style={styles.resetBtn}>RESET</button>
                 <button onClick={stopSession} style={styles.stopBtn}>STOP</button>
@@ -287,6 +300,7 @@ export default function App() {
           </section>
         )}
 
+        {/* Backend error banner */}
         {wsStatus === "error" && !camError && (
           <div style={styles.errorBanner}>
             ⚠️ Cannot connect to backend. Make sure{" "}
@@ -299,7 +313,7 @@ export default function App() {
   );
 }
 
-// ── Styles ───────────────────────────────────────────────────────────────────
+// ── Styles ────────────────────────────────────────────────────────────────────
 const styles = {
   root: {
     minHeight: "100vh",
@@ -331,26 +345,30 @@ const styles = {
   }),
   main: { flex: 1, padding: "32px 36px" },
 
+  // Selector
   selectorSection: { maxWidth: 860, margin: "0 auto" },
-  sectionLabel: { fontSize: 11, letterSpacing: "0.2em", color: "#555", marginBottom: 16 },
+  sectionLabel: {
+    fontSize: 11, letterSpacing: "0.2em",
+    color: "#555", marginBottom: 16,
+  },
   exerciseGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
     gap: 12, marginBottom: 32,
   },
   exerciseCard: (active) => ({
     background: active ? "#0d2818" : "#111118",
     border: `1px solid ${active ? "#00e676" : "#1e1e2e"}`,
     borderRadius: 10,
-    padding: "18px 12px",
+    padding: "22px 12px",
     cursor: "pointer",
     display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
     transition: "all 0.2s",
     boxShadow: active ? "0 0 16px #00e67622" : "none",
   }),
-  exerciseIcon:  { fontSize: 32 },
-  exerciseLabel: { fontSize: 15, fontWeight: 700, color: "#fff", letterSpacing: "0.05em" },
-  exerciseDesc:  { fontSize: 10, color: "#555", textAlign: "center", letterSpacing: "0.05em" },
+  exerciseIcon:  { fontSize: 36 },
+  exerciseLabel: { fontSize: 16, fontWeight: 700, color: "#fff", letterSpacing: "0.05em" },
+  exerciseDesc:  { fontSize: 10, color: "#555", textAlign: "center", letterSpacing: "0.04em" },
   startBtn: (disabled) => ({
     width: "100%", padding: "16px 0",
     background: disabled ? "#1a1a1a" : "linear-gradient(90deg, #00e676, #00bfa5)",
@@ -362,6 +380,7 @@ const styles = {
     fontFamily: "inherit",
   }),
 
+  // Session layout
   sessionLayout: {
     display: "grid",
     gridTemplateColumns: "1fr 340px",
@@ -383,6 +402,7 @@ const styles = {
     fontSize: 13, letterSpacing: "0.08em",
   },
 
+  // Stats
   statsCol: { display: "flex", flexDirection: "column", gap: 14 },
   counterCard: {
     background: "#111118", border: "1px solid #1e1e2e",
