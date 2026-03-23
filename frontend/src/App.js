@@ -58,6 +58,7 @@ export default function App() {
           voiceOn={voiceOn}
           wsStatus={wsStatus}
           setWsStatus={setWsStatus}
+          navigate={navigate}
         />
       )}
     </div>

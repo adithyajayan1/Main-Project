@@ -3,14 +3,41 @@ import { EXERCISES, WS_URL, COLOR } from "../constants";
 import { S } from "../styles";
 
 const speak = (text) => {
-  if (!window.speechSynthesis) return;
+  if (!window.speechSynthesis) {
+    console.warn("Speech synthesis not supported");
+    return;
+  }
+  // Cancel any ongoing speech first
   window.speechSynthesis.cancel();
+  
   const u = new SpeechSynthesisUtterance(text);
-  u.rate = 1.05; u.pitch = 1.0; u.volume = 1.0;
-  window.speechSynthesis.speak(u);
+  u.rate = 1.05; 
+  u.pitch = 1.0; 
+  u.volume = 1.0;
+  
+  // Try to get a working voice
+  const voices = window.speechSynthesis.getVoices();
+  if (voices.length > 0) {
+    // Prefer English voices
+    const englishVoice = voices.find(v => v.lang.startsWith("en")) || voices[0];
+    u.voice = englishVoice;
+  }
+  
+  // Add error handler
+  u.onerror = (event) => {
+    console.warn("Speech synthesis error:", event.error);
+  };
+  
+  // Also try immediately in case browser blocks it
+  try {
+    window.speechSynthesis.speak(u);
+  } catch (e) {
+    console.warn("Failed to speak:", e);
+  }
 };
 
-export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsStatus }) {
+export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsStatus, navigate }) {
+  // Note: navigate is passed as prop from App.js, not react-router-dom
   const [selected, setSelected]             = useState(initialExercise || null);
   const [running, setRunning]               = useState(false);
   const [count, setCount]                   = useState(0);
@@ -21,33 +48,66 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
   const [camError, setCamError]             = useState(null);
   const [lastSpoken, setLastSpoken]         = useState("");
   const [flashCount, setFlashCount]         = useState(false);
+  const [recording, setRecording]               = useState(false);
+  const [recordedChunks, setRecordedChunks]   = useState([]);
+  const [repLimit, setRepLimit]                = useState(10);
 
-  const videoRef    = useRef(null);
-  const canvasRef   = useRef(null);
-  const wsRef       = useRef(null);
-  const streamRef   = useRef(null);
-  const intervalRef = useRef(null);
-  const prevCount   = useRef(0);
+  const videoRef           = useRef(null);
+  const canvasRef          = useRef(null);
+  const wsRef              = useRef(null);
+  const streamRef          = useRef(null);
+  const intervalRef        = useRef(null);
+  const prevCount          = useRef(0);
+  const lastSpokenTimeRef  = useRef(0);  // Track when we last spoke for green feedback throttling
+  const mediaRecorderRef   = useRef(null);
 
   useEffect(() => () => stopSession(), []);
 
-  // Flash + speak on new rep
+  // Flash + speak on new rep - with delay to avoid interrupting feedback
   useEffect(() => {
     if (count > prevCount.current) {
       setFlashCount(true);
       setTimeout(() => setFlashCount(false), 400);
-      if (voiceOn) speak(`${count}`);
+      if (voiceOn) {
+        // Delay count speech slightly to allow feedback to be spoken first
+        setTimeout(() => speak(`${count}`), 500);
+      }
     }
     prevCount.current = count;
   }, [count, voiceOn]);
 
-  // Speak warning/error feedback when it changes
+  // Auto-stop recording when rep limit is reached
+  useEffect(() => {
+    if (recording && count >= repLimit && repLimit > 0 && mediaRecorderRef.current?.state === "recording") {
+      stopRecording();
+    }
+  }, [count, repLimit, recording]);
+
+  // Speak feedback when it changes - all colors (red, orange, green, gray)
   useEffect(() => {
     if (!voiceOn || feedbacks.length === 0) return;
-    const [msg, color] = feedbacks[0];
-    if ((color === "red" || color === "orange") && msg !== lastSpoken) {
-      speak(msg);
-      setLastSpoken(msg);
+    
+    // Find the first feedback that should be spoken (skip if already spoken)
+    for (const [msg, color] of feedbacks) {
+      if (msg !== lastSpoken) {
+        // Speak all important feedback: red (error), orange (warning), gray (info)
+        // Also speak green (positive) feedback occasionally
+        if (color === "red" || color === "orange" || color === "gray") {
+          speak(msg);
+          setLastSpoken(msg);
+          break;
+        } else if (color === "green") {
+          // Speak green feedback but less frequently to avoid too much speech
+          // Only speak if we haven't spoken a green message in the last 3 seconds
+          const timeSinceLastSpoken = Date.now() - (lastSpokenTimeRef.current || 0);
+          if (timeSinceLastSpoken > 3000) {
+            speak(msg);
+            setLastSpoken(msg);
+            lastSpokenTimeRef.current = Date.now();
+            break;
+          }
+        }
+      }
     }
   }, [feedbacks, voiceOn, lastSpoken]);
 
@@ -140,6 +200,160 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
     setRunning(false);
     setWsStatus("idle");
     setProcessedFrame(null);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      mediaRecorderRef.current.stop();
+      // Clean up recording state immediately since session is ending
+      setRecording(false);
+      mediaRecorderRef.current = null;
+      setRecordedChunks([]);
+    }
+    // Clean up overlay animation
+    if (recordingAnimationRef.current) {
+      cancelAnimationFrame(recordingAnimationRef.current);
+      recordingAnimationRef.current = null;
+    }
+    overlayCanvasRef.current = null;
+    if (overlayStreamRef.current) {
+      overlayStreamRef.current.getTracks().forEach(t => t.stop());
+      overlayStreamRef.current = null;
+    }
+  };
+
+  // ── Recording with visual overlay ───────────────────────────────────────────────────
+  const overlayCanvasRef = useRef(null);
+  const overlayStreamRef = useRef(null);
+  const recordingAnimationRef = useRef(null);
+
+  // Draw overlay on canvas (rep count + feedback)
+  const drawOverlay = (ctx, width, height, count, feedbackList) => {
+    
+    // Rep counter in top-right corner
+    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+    ctx.fillRect(width - 120, 10, 110, 60);
+    ctx.font = "bold 36px Orbitron, sans-serif";
+    ctx.fillStyle = "#00e676";
+    ctx.textAlign = "right";
+    ctx.fillText(count.toString(), width - 20, 55);
+    
+    // Feedback display in bottom-left corner
+    if (feedbackList && feedbackList.length > 0) {
+      const feedbackText = feedbackList[0][0]; // Get most recent feedback message
+      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+      ctx.fillRect(10, height - 70, Math.min(width - 20, 400), 60);
+      ctx.font = "bold 20px Rajdhani, sans-serif";
+      
+      // Color based on feedback type
+      const feedbackColor = feedbackList[0][1];
+      if (feedbackColor === "red") ctx.fillStyle = "#ff1744";
+      else if (feedbackColor === "orange") ctx.fillStyle = "#ff9100";
+      else if (feedbackColor === "green") ctx.fillStyle = "#00e676";
+      else ctx.fillStyle = "#9e9e9e";
+      
+      ctx.textAlign = "left";
+      ctx.fillText(feedbackText.substring(0, 40), 20, height - 30);
+    }
+  };
+
+  // Start recording video with overlay
+  const startRecording = () => {
+    if (!streamRef.current) return;
+    
+    const video = videoRef.current;
+    const width = video.videoWidth || 640;
+    const height = video.videoHeight || 480;
+    
+    // Create overlay canvas
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    overlayCanvasRef.current = canvas;
+    const ctx = canvas.getContext("2d");
+    
+    // Create stream from canvas
+    const canvasStream = canvas.captureStream(30); // 30 FPS
+    
+    // Get video track from camera stream
+    const videoTrack = streamRef.current.getVideoTracks()[0];
+    if (videoTrack) {
+      canvasStream.addTrack(videoTrack);
+    }
+    
+    overlayStreamRef.current = canvasStream;
+    
+    const options = { mimeType: "video/webm;codecs=vp9" };
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+      options.mimeType = "video/webm;codecs=vp8";
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options.mimeType = "video/webm";
+      }
+    }
+    
+    const chunks = [];
+    const mediaRecorder = new MediaRecorder(canvasStream, options);
+    
+    // Animation loop to draw frames with overlay
+    const drawFrame = () => {
+      if (!overlayCanvasRef.current || !mediaRecorderRef.current || mediaRecorderRef.current.state !== "recording") return;
+      
+      const c = overlayCanvasRef.current;
+      const cx = c.getContext("2d");
+      
+      // Draw camera frame
+      if (video && video.readyState >= 2) {
+        cx.drawImage(video, 0, 0, c.width, c.height);
+      }
+      
+      // Draw overlay
+      drawOverlay(cx, c.width, c.height, count, feedbacks);
+      
+      recordingAnimationRef.current = requestAnimationFrame(drawFrame);
+    };
+    
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) {
+        chunks.push(e.data);
+      }
+    };
+    
+    mediaRecorder.onstop = () => {
+      setRecordedChunks(chunks);
+      setRecording(false);
+      mediaRecorderRef.current = null;
+      if (recordingAnimationRef.current) {
+        cancelAnimationFrame(recordingAnimationRef.current);
+      }
+    };
+    
+    mediaRecorder.start(100);
+    mediaRecorderRef.current = mediaRecorder;
+    setRecording(true);
+    setRecordedChunks([]);
+    
+    // Start the drawing loop
+    drawFrame();
+  };
+
+  // Stop recording video
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      mediaRecorderRef.current.stop();
+      // Note: recording state will be set to false in onstop callback
+    }
+  };
+
+  // Download recorded video
+  const downloadRecording = () => {
+    if (recordedChunks.length === 0) return;
+    
+    const blob = new Blob(recordedChunks, { type: "video/webm" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${selected}_${new Date().toISOString().slice(0,10)}.webm`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const resetCount = () => {
@@ -178,6 +392,13 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
                 {selected === ex.id && (
                   <span style={S.exCheck}>✓ SELECTED</span>
                 )}
+                <a
+                  href={`/tutorials?id=${ex.id}`}
+                  onClick={(e) => { e.preventDefault(); navigate(`/tutorials?id=${ex.id}`); }}
+                  style={S.exHelpLink}
+                >
+                  📖 View Tutorial
+                </a>
               </button>
             ))}
           </div>
@@ -308,6 +529,50 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
             <div style={S.ctrlRow}>
               <button onClick={resetCount} style={S.resetBtn}>↺ RESET</button>
               <button onClick={stopSession} style={S.stopBtn}>■ STOP</button>
+            </div>
+
+            {/* Recording Controls */}
+            <div style={S.recordingCard}>
+              <div style={S.recordingHeader}>
+                <span style={S.recordingTitle}>🎬 VIDEO RECORDING</span>
+              </div>
+              
+              <div style={S.repLimitRow}>
+                <span style={S.repLimitLabel}>Stop recording after:</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={repLimit}
+                  onChange={(e) => setRepLimit(Math.max(1, Math.min(100, parseInt(e.target.value, 10) || 10)))}
+                  style={S.repLimitInput}
+                />
+                <span style={S.repLimitUnit}>reps</span>
+              </div>
+
+              <div style={S.recCtrlRow}>
+                {!recording ? (
+                  <button onClick={startRecording} style={S.recordBtn} disabled={!running}>
+                    {running ? "⏺ START RECORDING" : "⏺ RECORD"}
+                  </button>
+                ) : (
+                  <button onClick={stopRecording} style={S.recordingActiveBtn}>
+                    ⏹ STOP RECORDING
+                  </button>
+                )}
+                
+                {recordedChunks.length > 0 && !recording && (
+                  <button onClick={downloadRecording} style={S.downloadBtn}>
+                    ↓ DOWNLOAD
+                  </button>
+                )}
+              </div>
+
+              {recording && (
+                <div style={S.recordingStatus}>
+                  <span style={S.recDot} /> Recording... (auto-stops at {repLimit} reps)
+                </div>
+              )}
             </div>
 
           </div>
