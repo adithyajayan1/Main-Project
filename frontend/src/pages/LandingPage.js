@@ -8,7 +8,7 @@ export default function LandingPage({ navigate }) {
       {/* Hero text */}
       <div className="fade-up" style={S.landingHero}>
         <h1 style={S.heroTitle}>
-          YOUR <span style={{ color: "#00e676" }}>AI TRAINER</span>
+          YOUR <span style={{ color: "#00e676" }}>TRAINER</span>
           <br />IS READY.
         </h1>
         <p style={S.heroSub}>
@@ -23,7 +23,7 @@ export default function LandingPage({ navigate }) {
           <span style={S.landingCardIcon}>🏋️</span>
           <span style={S.landingCardTitle}>START WORKOUT</span>
           <span style={S.landingCardDesc}>
-            Begin a real-time AI session.<br />
+            Begin a real-time session.<br />
             Get instant form feedback.
           </span>
           <span style={{ ...S.landingCardBtn, background: "#00e676", color: "#000" }}>

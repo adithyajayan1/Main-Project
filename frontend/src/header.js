@@ -11,7 +11,7 @@ export default function Header({ page, navigate, voiceOn, setVoiceOn, wsStatus }
         <button onClick={() => navigate("landing")} style={S.logoBtn}>
           <span style={S.logoA}>FORM</span>
           <span style={S.logoB}>FLEX</span>
-          <span style={S.logoTag}>AI FITNESS COACH</span>
+          <span style={S.logoTag}>FITNESS COACH</span>
         </button>
 
         {/* Nav links — always visible */}
