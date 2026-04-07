@@ -18,19 +18,6 @@ HIP_SYM_LIM      = 20    # L/R hip y: hip rotation
 NECK_ALIGN_LIM   = 35    # nose y vs shoulder: neck neutral
 
 def process(image, idx, state):
-    """
-    Angles & checks:
-    1.  Body line angle       shoulder→hip→ankle             [TIMER & MAIN]
-    2.  Body line fallback    shoulder→hip→knee              [ANKLE HIDDEN]
-    3.  Head position         nose y vs shoulder y           [HEAD DROP/UP]
-    4.  Shoulder over wrist   shoulder x vs wrist x          [WRIST PLACEMENT]
-    5.  Elbow angle           shoulder→elbow→wrist           [HIGH vs FOREARM]
-    6.  Shoulder symmetry     L/R shoulder y                 [BODY TWIST]
-    7.  Hip symmetry          L/R hip y                      [HIP ROTATION]
-    8.  Neck alignment        nose vs shoulder neutral        [NECK STRAIN]
-    9.  Hip sag severity      body_angle severity            [HOW BAD]
-    10. Alignment percentage  body_angle interpolated        [FEEDBACK BAR]
-    """
     feedbacks = []
 
     # ── Side selection ────────────────────────────────────────────────────────
@@ -65,60 +52,50 @@ def process(image, idx, state):
     cv2.circle(image, hip,      7, (0, 200, 255), cv2.FILLED)
     cv2.circle(image, ankle,    7, (0, 200, 255), cv2.FILLED)
 
-    # ── 1. BODY LINE ANGLE → timer ────────────────────────────────────────────
+    is_form_valid = True
+
+    # ── 0. HORIZONTAL INCLINATION ────────────────────────────────────────────
+    vertical_ref = (ankle[0], ankle[1] - 100)
+    inclination = ang((shoulder, ankle), (ankle, vertical_ref))
+    if inclination < 50 or inclination > 130:
+        feedbacks.append(("Get in horizontal position!", "red"))
+        is_form_valid = False
+
+    # ── FORM CHECKS ──────────────────────────────────────────────────────────
     body_angle = ang((shoulder, hip), (hip, ankle))
-    align_pct  = float(np.clip(
-        np.interp(body_angle, (120, 175), (0, 100)), 0, 100))
-    cv2.putText(image, f"Body:{int(body_angle)}d",
-                (hip[0]+8, hip[1]-10),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,165,0), 2)
-
-    # ── 9 & 10. BODY POSITION QUALITY ────────────────────────────────────────
-    if body_angle >= PLANK_ACTIVE:
-        if 'start_time' not in state:
-            state['start_time'] = time.time()
-        state['count'] = int(time.time() - state['start_time'])
-        state['stage'] = f"{state['count']}s"
-
+    
+    if is_form_valid:
         if body_angle > PLANK_GOOD_MAX:
-            feedbacks.append(("Hips too high!", "red"))
+            feedbacks.append(("Hips too high - lower them!", "red"))
+            is_form_valid = False
+        elif body_angle < HIP_SAG_BAD:
+            feedbacks.append(("Hips severely sagging - raise hips!", "red"))
+            is_form_valid = False
         elif body_angle < PLANK_GOOD_MIN:
             feedbacks.append(("Hips slightly low", "orange"))
-        else:
-            feedbacks.append(("Perfect plank alignment!", "green"))
-    else:
-        state.pop('start_time', None)
-        state['stage'] = "HOLD"
-        if body_angle < HIP_SAG_BAD:
-            feedbacks.append(("Hips severely sagging!", "red"))
-        else:
-            feedbacks.append(("Raise hips to plank position!", "orange"))
 
-    # ── 3. HEAD POSITION ─────────────────────────────────────────────────────
+    # HEAD POSITION
     if nose:
         head_diff = nose[1] - shoulder[1]
         if head_diff > HEAD_OFFSET:
-            feedbacks.append(("Head dropping — look down!", "red"))
+            feedbacks.append(("Head dropping — look down and forward!", "red"))
+            is_form_valid = False
         elif head_diff < -HEAD_OFFSET:
             feedbacks.append(("Head too high — look down!", "orange"))
-        else:
-            feedbacks.append(("Head neutral: good", "green"))
 
-        # ── 8. NECK ALIGNMENT ─────────────────────────────────────────────────
+        # NECK ALIGNMENT
         neck_forward = abs(nose[0] - shoulder[0])
         if neck_forward > NECK_ALIGN_LIM:
             feedbacks.append(("Neck forward — tuck chin!", "orange"))
 
-    # ── 4. SHOULDER OVER WRIST ───────────────────────────────────────────────
+    # SHOULDER OVER WRIST
     if wrist:
         cv2.line(image, shoulder, wrist, (100,200,255), 1)
         sw_diff = abs(shoulder[0] - wrist[0])
         if sw_diff > SHOULDER_WRIST_X:
-            feedbacks.append(("Wrists under shoulders!", "orange"))
-        else:
-            feedbacks.append(("Wrist placement: good", "green"))
+            feedbacks.append(("Keep wrists under shoulders!", "orange"))
 
-    # ── 5. ELBOW ANGLE → high vs forearm plank ───────────────────────────────
+    # ELBOW ANGLE
     if elbow and wrist:
         elbow_angle = ang((shoulder, elbow), (elbow, wrist))
         cv2.putText(image, f"El:{int(elbow_angle)}d",
@@ -131,14 +108,36 @@ def process(image, idx, state):
         else:
             feedbacks.append(("Check arm position!", "orange"))
 
-    # ── 6. SHOULDER SYMMETRY → body twist ────────────────────────────────────
+    # SHOULDER SYMMETRY
     if opp_s:
         if abs(shoulder[1] - opp_s[1]) > SHOULDER_SYM_LIM:
-            feedbacks.append(("Body rotating — stay straight!", "orange"))
+            feedbacks.append(("Body twisting — stay straight!", "orange"))
 
-    # ── 7. HIP SYMMETRY → hip rotation ───────────────────────────────────────
+    # HIP SYMMETRY
     if opp_h:
         if abs(hip[1] - opp_h[1]) > HIP_SYM_LIM:
             feedbacks.append(("Keep hips level!", "orange"))
+
+    # ── 1. TIMER LOGIC ───────────────────────────────────────────────────────
+    align_pct  = float(np.clip(
+        np.interp(body_angle, (120, 175), (0, 100)), 0, 100))
+    cv2.putText(image, f"Body:{int(body_angle)}d",
+                (hip[0]+8, hip[1]-10),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,165,0), 2)
+
+    if body_angle >= PLANK_ACTIVE and is_form_valid:
+        if 'start_time' not in state:
+            state['start_time'] = time.time()
+        state['count'] = int(time.time() - state['start_time'])
+        state['stage'] = f"{state['count']}s"
+        if not any(f[1] == "red" or f[1] == "orange" for f in feedbacks):
+            feedbacks.append(("Perfect plank alignment!", "green"))
+    else:
+        state.pop('start_time', None)
+        state['stage'] = "HOLD"
+        feedbacks.append(("Fix form to start timer!", "orange"))
+
+    color_priority = {"red": 0, "orange": 1, "gray": 2, "green": 3}
+    feedbacks.sort(key=lambda f: color_priority.get(f[1], 4))
 
     return image, state, feedbacks[:7], align_pct
