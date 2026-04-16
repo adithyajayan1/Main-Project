@@ -1,7 +1,14 @@
 import { S } from "./styles";
 
-export default function Header({ page, navigate, voiceOn, setVoiceOn, wsStatus }) {
+export default function Header({ page, navigate, voiceOn, setVoiceOn, wsStatus, user, setUser }) {
   const showVoice = page === "workout";
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    setUser(null);
+    navigate("landing");
+  };
 
   return (
     <header style={S.header}>
@@ -14,7 +21,7 @@ export default function Header({ page, navigate, voiceOn, setVoiceOn, wsStatus }
           <span style={S.logoTag}>FITNESS COACH</span>
         </button>
 
-        {/* Nav links — always visible */}
+        {/* Nav links */}
         <nav style={S.navLinks}>
           <button
             onClick={() => navigate("landing")}
@@ -22,12 +29,30 @@ export default function Header({ page, navigate, voiceOn, setVoiceOn, wsStatus }
           >
             HOME
           </button>
-          <button
-            onClick={() => navigate("workout")}
-            style={S.navLink(page === "workout")}
-          >
-            WORKOUT
-          </button>
+          
+          {user && (
+            <>
+              <button
+                onClick={() => navigate("dashboard")}
+                style={S.navLink(page === "dashboard")}
+              >
+                DASHBOARD
+              </button>
+              <button
+                onClick={() => navigate("workout")}
+                style={S.navLink(page === "workout")}
+              >
+                WORKOUT
+              </button>
+              <button
+                onClick={() => navigate("reports")}
+                style={S.navLink(page === "reports")}
+              >
+                REPORTS
+              </button>
+            </>
+          )}
+
           <button
             onClick={() => navigate("tutorials")}
             style={S.navLink(page === "tutorials")}
@@ -37,7 +62,7 @@ export default function Header({ page, navigate, voiceOn, setVoiceOn, wsStatus }
         </nav>
       </div>
 
-      {/* Right — voice toggle + connection status */}
+      {/* Right — voice toggle + connection status + auth */}
       <div style={S.headerRight}>
         {showVoice && (
           <button
@@ -64,6 +89,20 @@ export default function Header({ page, navigate, voiceOn, setVoiceOn, wsStatus }
               boxShadow: wsStatus === "connected" ? "0 0 10px #00e676" : "none",
             }} />
             <span style={S.connLabel}>{wsStatus.toUpperCase()}</span>
+          </div>
+        )}
+
+        {/* User Auth Info */}
+        {!showVoice && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            {user ? (
+              <>
+                <span style={{ color: "#fff", fontSize: "14px", fontWeight: "600" }}>{user.name}</span>
+                <button onClick={handleLogout} style={S.logoutBtn}>LOGOUT</button>
+              </>
+            ) : (
+              <button onClick={() => navigate("login")} style={S.loginNavBtn}>LOGIN / SIGNUP</button>
+            )}
           </div>
         )}
       </div>

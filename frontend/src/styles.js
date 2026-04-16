@@ -219,4 +219,71 @@ export const S = {
   ctrlRow: { display:"flex", gap:10 },
   resetBtn: { flex:1, padding:"14px 0", background:"#0e0e1a", border:"1px solid #1a1a2e", borderRadius:10, color:"#888", fontSize:13, fontWeight:800, letterSpacing:"0.14em", cursor:"pointer", fontFamily:"'Rajdhani',sans-serif" },
   stopBtn:  { flex:1, padding:"14px 0", background:"#1a0505", border:"1px solid #ff1744", borderRadius:10, color:"#ff1744", fontSize:13, fontWeight:800, letterSpacing:"0.14em", cursor:"pointer", fontFamily:"'Rajdhani',sans-serif", boxShadow:"0 0 12px #ff174420" },
+
+  // ── Authentication ──────────────────────────────────────────────────────────
+  loginContainer: {
+    maxWidth: 400, margin: "80px auto", padding: "40px 30px",
+    background: "linear-gradient(145deg,#0e0e1a,#111120)",
+    border: "1px solid #1a1a2e", borderRadius: 16,
+    display: "flex", flexDirection: "column", gap: 20, textAlign: "center",
+    boxShadow: "0 8px 32px #00000060"
+  },
+  input: {
+    width: "100%", padding: "14px", borderRadius: 8,
+    background: "#07070f", border: "1px solid #1a1a2e",
+    color: "#fff", fontSize: 15, fontFamily: "inherit",
+    boxSizing: 'border-box'
+  },
+  authBtn: {
+    width: "100%", padding: "14px", borderRadius: 8,
+    background: "linear-gradient(90deg,#00e676,#00bfa5)",
+    border: "none", color: "#000", fontWeight: 800, fontSize: 15,
+    cursor: "pointer", letterSpacing: "0.1em"
+  },
+  toggleText: { fontSize: 13, color: "#aaa", cursor: "pointer", textDecoration: "underline" },
+  logoutBtn: {
+    background: "transparent", border: "1px solid #ff1744", color: "#ff1744",
+    padding: "6px 14px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 700
+  },
+  loginNavBtn: {
+    background: "#00e676", border: "none", color: "#000",
+    padding: "6px 14px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 700
+  },
+
+  // ── Dashboard ─────────────────────────────────────────────────────────────
+  dashboard: { maxWidth: 1000, margin: "0 auto", padding: "40px", flex: 1, width: "100%" },
+  statsGrid: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 20, marginBottom: 40 },
+  quickStart: { marginBottom: 40 },
+  exerciseButtons: { display: "flex", gap: 15 },
+  recentSection: { marginBottom: 40 },
+  sessionCard: {
+    background: "linear-gradient(145deg,#0e0e1a,#111120)",
+    border: "1px solid #1a1a2e", borderRadius: 12, padding: "20px",
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    marginBottom: 10, cursor: "pointer"
+  },
+  sessionCardLeft: { display: "flex", flexDirection: "column", gap: 5 },
+  sessionTitle: { color: "#fff", fontSize: 18, fontWeight: "bold" },
+  sessionMeta: { color: "#888", fontSize: 14 },
+  sessionBadge: { background: "#00e67622", color: "#00e676", padding: "4px 8px", borderRadius: 4, fontSize: 12, fontWeight: "bold" },
+
+  // ── Reports ─────────────────────────────────────────────────────────────
+  reportsPage: { maxWidth: 1000, margin: "0 auto", padding: "40px", flex: 1, width: "100%" },
+  timeSelector: { display: "flex", gap: 10, marginBottom: 30 },
+  timeBtn: (active) => ({
+    background: active ? "#00e676" : "transparent",
+    color: active ? "#000" : "#fff",
+    border: `1px solid ${active ? "#00e676" : "#444"}`,
+    padding: "8px 16px", borderRadius: 20, cursor: "pointer", fontWeight: "bold"
+  }),
+  chartCard: {
+    background: "linear-gradient(145deg,#0e0e1a,#111120)",
+    border: "1px solid #1a1a2e", borderRadius: 16, padding: "30px", marginBottom: 30,
+  },
+  chartTitle: { color: "#fff", fontSize: 20, marginBottom: 20, fontWeight: "bold" },
+  chartRow: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 30 },
+  statItems: { display: "flex", flexDirection: "column", gap: 15 },
+  statItem: { display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #1a1a2e" },
+  statLabel: { color: "#888", fontSize: 15 },
+  statVal: { color: "#fff", fontSize: 18, fontWeight: "bold" }
 };

@@ -5,3 +5,5 @@ fastapi
 uvicorn[standard]
 websockets
 python-multipart
+sqlalchemy
+PyJWT

@@ -2,14 +2,23 @@ import asyncio
 import base64
 import json
 import traceback
+import os
+from datetime import datetime, timedelta
 
 import cv2
 import mediapipe as mp
 import numpy as np
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status, UploadFile, File, Form, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer
+from typing import Optional
+from pydantic import BaseModel
+import jwt
 
 from src.utils import get_idx_to_coordinates
+
+# ── Import models ────────────────────────────────────────────────
+from models import SessionLocal, engine, User, Session
 
 # ── Import exercise processors ────────────────────────────────────────────────
 from src.exercises.pushup       import process as process_pushup
@@ -26,6 +35,169 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── DB & Auth Setup ────────────────────────────────────────────────
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+SECRET_KEY = "your-secret-key-change-in-production"
+ALGORITHM = "HS256"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+def create_token(user_id: int) -> str:
+    payload = {
+        "user_id": user_id,
+        "exp": datetime.utcnow() + timedelta(days=7)
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+def verify_token(token: str) -> int:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload["user_id"]
+    except:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: str
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+@app.post("/api/auth/register")
+def register(req: RegisterRequest, db = Depends(get_db)):
+    if db.query(User).filter(User.email == req.email).first():
+        raise HTTPException(status_code=400, detail="Email already registered")
+    user = User(email=req.email, name=req.name)
+    user.set_password(req.password)
+    db.add(user)
+    db.commit()
+    token = create_token(user.id)
+    return {"token": token, "user": {"id": user.id, "email": user.email, "name": user.name}}
+
+@app.post("/api/auth/login")
+def login(req: LoginRequest, db = Depends(get_db)):
+    user = db.query(User).filter(User.email == req.email).first()
+    if not user or not user.verify_password(req.password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    token = create_token(user.id)
+    return {"token": token, "user": {"id": user.id, "email": user.email, "name": user.name}}
+
+@app.get("/api/dashboard/{user_id}")
+def get_dashboard(user_id: int, db = Depends(get_db)):
+    user = db.query(User).get(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    sessions = db.query(Session).filter(Session.user_id == user_id).order_by(Session.created_at.desc()).all()
+    
+    streak = 0
+    today = datetime.now().date()
+    
+    for i, _ in enumerate(sessions):
+        # naive streak calculation
+        streak = i + 1  # Simplified for now
+        break
+    
+    total_minutes = sum(s.duration or 0 for s in sessions) // 60
+    
+    recent = []
+    for s in sessions[:5]:
+        recent.append({
+            "id": s.id, "exercise": s.exercise, "rep_count": s.rep_count,
+            "duration": s.duration, "created_at": s.created_at.isoformat()
+        })
+        
+    return {
+        "stats": {
+            "streak": streak,
+            "total_workouts": len(sessions),
+            "total_minutes": total_minutes,
+            "this_week": len([s for s in sessions if (datetime.now() - s.created_at).days <= 7])
+        },
+        "recent_sessions": recent
+    }
+
+VIDEO_DIR = "recordings"
+os.makedirs(VIDEO_DIR, exist_ok=True)
+
+@app.post("/api/sessions")
+async def create_session(
+    video: UploadFile = File(...),
+    exercise: str = Form(...),
+    rep_count: int = Form(...),
+    duration: Optional[int] = Form(None),
+    authorization: str = Header(...),
+    db = Depends(get_db)
+):
+    try:
+        user_id = verify_token(authorization.replace("Bearer ", ""))
+    except Exception:
+        user_id = verify_token(authorization)
+        
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    video_path = f"{VIDEO_DIR}/{user_id}_{exercise}_{timestamp}.webm"
+    
+    with open(video_path, "wb") as f:
+        f.write(await video.read())
+        
+    session = Session(
+        user_id=user_id, exercise=exercise, rep_count=rep_count,
+        duration=duration, video_path=video_path, created_at=datetime.now()
+    )
+    db.add(session)
+    db.commit()
+    return {"session_id": session.id, "status": "saved"}
+
+@app.get("/api/reports/{user_id}")
+def get_reports(user_id: int, range: str = "week", authorization: str = Header(...), db = Depends(get_db)):
+    try:
+        verify_token(authorization.replace("Bearer ", ""))
+    except:
+        verify_token(authorization)
+        
+    start_date = datetime.now()
+    if range == "week":
+        start_date = start_date - timedelta(days=7)
+    elif range == "month":
+        start_date = start_date - timedelta(days=30)
+    else:
+        start_date = start_date - timedelta(days=365)
+        
+    sessions = db.query(Session).filter(
+        Session.user_id == user_id, Session.created_at >= start_date
+    ).all()
+    
+    date_counts = {}
+    for s in sessions:
+        date_str = s.created_at.strftime("%Y-%m-%d")
+        date_counts[date_str] = date_counts.get(date_str, 0) + 1
+        
+    labels = sorted(date_counts.keys())
+    session_counts = [date_counts[d] for d in labels]
+    
+    exercise_counts = {}
+    for s in sessions:
+        exercise_counts[s.exercise] = exercise_counts.get(s.exercise, 0) + 1
+    exercises = [{"name": k, "count": v} for k, v in exercise_counts.items()]
+    
+    total_reps = sum(s.rep_count for s in sessions)
+    total_time = sum(s.duration or 0 for s in sessions) // 60
+    
+    return {
+        "labels": labels, "sessions": session_counts, "exercises": exercises,
+        "total_sessions": len(sessions), "total_reps": total_reps, "total_time": total_time,
+        "best_streak": 0
+    }
+
+# ── WebSocket ────────────────────────────────────────────────
 
 mp_drawing = mp.solutions.drawing_utils
 mp_holistic = mp.solutions.holistic
@@ -63,7 +235,6 @@ async def websocket_endpoint(websocket: WebSocket, exercise_type: str):
                 state = {"count": 0, "stage": "UP", "flag": False}
                 continue
 
-            # Decode base64 frame from browser
             img_data = base64.b64decode(payload["frame"].split(",")[1])
             np_arr   = np.frombuffer(img_data, np.uint8)
             image    = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
@@ -92,7 +263,6 @@ async def websocket_endpoint(websocket: WebSocket, exercise_type: str):
                 traceback.print_exc()
                 feedbacks = [("Adjust your position", "orange")]
 
-            # Re-encode annotated frame
             _, buffer = cv2.imencode('.jpg', image, [cv2.IMWRITE_JPEG_QUALITY, 70])
             encoded   = base64.b64encode(buffer).decode('utf-8')
 

@@ -2,16 +2,9 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { EXERCISES, WS_URL, COLOR } from "../constants";
 import { S } from "../styles";
 
-const speak = (text) => {
-  if (!window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.rate = 1.05; u.pitch = 1.0; u.volume = 1.0;
-  window.speechSynthesis.speak(u);
-};
-
-export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsStatus }) {
+export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsStatus, token }) {
   const [selected, setSelected]             = useState(initialExercise || null);
+  const [targetReps, setTargetReps]         = useState(10);
   const [running, setRunning]               = useState(false);
   const [count, setCount]                   = useState(0);
   const [stage, setStage]                   = useState("--");
@@ -19,7 +12,6 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
   const [feedbacks, setFeedbacks]           = useState([]);
   const [processedFrame, setProcessedFrame] = useState(null);
   const [camError, setCamError]             = useState(null);
-  const [lastSpoken, setLastSpoken]         = useState("");
   const [flashCount, setFlashCount]         = useState(false);
 
   const videoRef    = useRef(null);
@@ -29,7 +21,38 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
   const intervalRef = useRef(null);
   const prevCount   = useRef(0);
 
-  useEffect(() => () => stopSession(), []);
+  // Video recording refs
+  const mediaRecorderRef = useRef(null);
+  const videoChunksRef = useRef([]);
+
+  // TTS refs
+  const isSpeakingRef = useRef(false);
+  const needsToSpeakRef = useRef(null);
+  const currentBadPostureRef = useRef(null);
+  const badPostureTimerRef = useRef(null);
+
+  const speak = useCallback((text) => {
+    if (!window.speechSynthesis) return;
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 1.05; u.pitch = 1.0; u.volume = 1.0;
+    
+    isSpeakingRef.current = true;
+    u.onend = () => {
+      isSpeakingRef.current = false;
+      if (needsToSpeakRef.current) {
+        const nextText = needsToSpeakRef.current;
+        needsToSpeakRef.current = null;
+        speak(nextText);
+      }
+    };
+    window.speechSynthesis.speak(u);
+  }, []);
+
+  useEffect(() => () => {
+    stopSession();
+    window.speechSynthesis?.cancel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Flash + speak on new rep
   useEffect(() => {
@@ -39,17 +62,45 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
       if (voiceOn) speak(`${count}`);
     }
     prevCount.current = count;
-  }, [count, voiceOn]);
+  }, [count, voiceOn, speak]);
 
-  // Speak warning/error feedback when it changes
+  // Auto-stop logic when target reached
   useEffect(() => {
-    if (!voiceOn || feedbacks.length === 0) return;
-    const [msg, color] = feedbacks[0];
-    if ((color === "red" || color === "orange") && msg !== lastSpoken) {
-      speak(msg);
-      setLastSpoken(msg);
+    if (running && count >= targetReps && count !== 0) {
+      const wait = setTimeout(() => {
+        if (voiceOn) speak(`Workout complete! You reached ${targetReps}.`);
+        stopSession();
+      }, 1000);
+      return () => clearTimeout(wait);
     }
-  }, [feedbacks, voiceOn, lastSpoken]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [count, targetReps, running, voiceOn, speak]);
+
+  // Voice feedback optimization logic
+  useEffect(() => {
+    if (!voiceOn) return;
+    
+    if (feedbacks.length === 0 || (feedbacks[0][1] !== "red" && feedbacks[0][1] !== "orange")) {
+      clearTimeout(badPostureTimerRef.current);
+      currentBadPostureRef.current = null;
+      return;
+    }
+
+    const msg = feedbacks[0][0];
+
+    if (currentBadPostureRef.current !== msg) {
+      currentBadPostureRef.current = msg;
+      clearTimeout(badPostureTimerRef.current);
+      
+      badPostureTimerRef.current = setTimeout(() => {
+        if (!isSpeakingRef.current) {
+          speak(msg);
+        } else {
+          needsToSpeakRef.current = msg;
+        }
+      }, 1000); // 1 second threshold
+    }
+  }, [feedbacks, voiceOn, speak]);
 
   // ── Camera ────────────────────────────────────────────────────────────────
   const startCamera = () => new Promise((resolve, reject) => {
@@ -88,9 +139,14 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
     if (!selected) return;
     setCamError(null);
     setCount(0); setStage("--"); setDepthPct(0);
-    setFeedbacks([]); setProcessedFrame(null); setLastSpoken("");
+    setFeedbacks([]); setProcessedFrame(null);
     prevCount.current = 0;
     setWsStatus("connecting");
+    window.speechSynthesis?.cancel();
+    isSpeakingRef.current = false;
+    needsToSpeakRef.current = null;
+    currentBadPostureRef.current = null;
+    clearTimeout(badPostureTimerRef.current);
 
     try { await startCamera(); }
     catch {
@@ -105,7 +161,24 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
     ws.onopen = () => {
       setWsStatus("connected");
       setRunning(true);
-      if (voiceOn) speak(`Starting ${EXERCISES.find(e => e.id === selected)?.label}`);
+      if (voiceOn) speak(`Starting ${EXERCISES.find(e => e.id === selected)?.label}. Target is ${targetReps}.`);
+      
+      // Start Video Recording
+      const stream = streamRef.current;
+      if (stream && typeof MediaRecorder !== 'undefined') {
+        videoChunksRef.current = [];
+        try {
+          const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) videoChunksRef.current.push(e.data);
+          };
+          mediaRecorder.start(1000); // chunk every 1s
+          mediaRecorderRef.current = mediaRecorder;
+        } catch (err) {
+          console.warn("MediaRecorder initialisation failed:", err);
+        }
+      }
+
       setTimeout(() => {
         intervalRef.current = setInterval(() => {
           if (ws.readyState !== WebSocket.OPEN) return;
@@ -132,8 +205,32 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
   };
 
   const stopSession = () => {
+    // 1. Stop video recording
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+      
+      const currentCount = prevCount.current;
+      
+      setTimeout(() => {
+        const chunks = videoChunksRef.current;
+        if (chunks.length > 0 && token) {
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          const formData = new FormData();
+          formData.append('video', blob, `session_${Date.now()}.webm`);
+          formData.append('exercise', selected);
+          formData.append('rep_count', currentCount);
+          formData.append('duration', selected === 'plank' ? currentCount : Math.floor(currentCount * 3)); // approx duration
+          
+          fetch('http://localhost:8000/api/sessions', {
+            method: 'POST',
+            body: formData,
+            headers: { 'Authorization': `Bearer ${token}` }
+          }).catch(console.error);
+        }
+      }, 500);
+    }
+
     clearInterval(intervalRef.current);
-    window.speechSynthesis?.cancel();
     wsRef.current?.close();
     wsRef.current = null;
     stopCamera();
@@ -147,7 +244,7 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
       wsRef.current.send(JSON.stringify({ type: "reset" }));
     }
     setCount(0); setStage("--"); setDepthPct(0);
-    setFeedbacks([]); setLastSpoken(""); prevCount.current = 0;
+    setFeedbacks([]); prevCount.current = 0;
   };
 
   const exercise = EXERCISES.find(e => e.id === selected);
@@ -156,11 +253,9 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
   return (
     <main style={S.main}>
 
-      {/* Always mounted — needed for ref stability */}
       <video ref={videoRef} style={{ display: "none" }} muted playsInline autoPlay />
       <canvas ref={canvasRef} style={{ display: "none" }} />
 
-      {/* ── Exercise selector ── */}
       {!running && (
         <section style={S.selectorWrap}>
           <p style={S.sectionLabel}>⚡ CHOOSE YOUR EXERCISE</p>
@@ -182,6 +277,24 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
             ))}
           </div>
 
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 30, alignItems: "center", gap: 15 }}>
+            <span style={{ fontSize: 14, fontWeight: "bold", letterSpacing: "0.1em", color: "#aaa" }}>
+              TARGET {selected === "plank" ? "TIME (SEC)" : "REPS"}:
+            </span>
+            <input 
+              type="number" 
+              value={targetReps} 
+              onChange={e => setTargetReps(Number(e.target.value))} 
+              min="1"
+              max="999"
+              style={{
+                background: "#0e0e1a", border: "1px solid #1a1a2e", borderRadius: 8,
+                padding: "8px 16px", color: "#00e676", fontSize: 20, fontWeight: "bold",
+                width: 80, textAlign: "center", fontFamily: "'Orbitron', sans-serif"
+              }}
+            />
+          </div>
+
           {camError && (
             <div style={{ ...S.errorBox, margin: "0 0 20px" }}>⚠️ {camError}</div>
           )}
@@ -198,15 +311,12 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
         </section>
       )}
 
-      {/* ── Active session ── */}
       {running && (
         <section style={S.session}>
 
-          {/* Video panel */}
           <div style={S.videoPanel}>
             <div style={S.videoBox}>
 
-              {/* Raw camera before processed frame arrives */}
               <video
                 ref={(el) => {
                   if (el && streamRef.current && el.srcObject !== streamRef.current)
@@ -220,7 +330,6 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
                 muted playsInline autoPlay
               />
 
-              {/* Annotated frame from backend */}
               {processedFrame && (
                 <img
                   src={processedFrame}
@@ -232,12 +341,17 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
               <div style={S.videoBadge}>
                 {exercise?.icon}&nbsp;{exercise?.label.toUpperCase()}
               </div>
+              
+              <div style={{ position: "absolute", bottom: 12, left: 12, zIndex: 5, background: "#ff1744cc", color: "#fff", padding: "4px 8px", borderRadius: 6, fontSize: 10, fontWeight: "bold", letterSpacing: "0.1em", display: "flex", alignItems: "center", gap: 5 }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#fff", animation: "pulse-dot 1s infinite" }} />
+                RECORDING
+              </div>
+
               <div style={S.stagePill(stage)} className="stage-badge">
                 {stage}
               </div>
             </div>
 
-            {/* Depth bar */}
             <div style={S.depthWrap}>
               <div style={S.depthRow}>
                 <span style={S.depthLbl}>
@@ -257,13 +371,10 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
             </div>
           </div>
 
-          {/* Stats panel */}
           <div style={S.statsPanel}>
-
-            {/* Counter */}
             <div style={S.counterCard}>
               <p style={S.counterLbl}>
-                {selected === "plank" ? "⏱ HOLD TIME (sec)" : "🔁 REPS"}
+                {selected === "plank" ? "⏱ HOLD TIME (sec)" : "🔁 REPS"} / {targetReps}
               </p>
               <p
                 className={`counter-val${flashCount ? " flash" : ""}`}
@@ -273,7 +384,6 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
               </p>
             </div>
 
-            {/* Feedback */}
             <div style={S.feedbackCard}>
               <div style={S.feedbackHeader}>
                 <span style={S.feedbackTitle}>💬 LIVE FEEDBACK</span>
@@ -304,17 +414,15 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
               </div>
             </div>
 
-            {/* Controls */}
             <div style={S.ctrlRow}>
               <button onClick={resetCount} style={S.resetBtn}>↺ RESET</button>
-              <button onClick={stopSession} style={S.stopBtn}>■ STOP</button>
+              <button onClick={stopSession} style={S.stopBtn}>■ STOP & SAVE</button>
             </div>
 
           </div>
         </section>
       )}
 
-      {/* Backend error */}
       {wsStatus === "error" && !camError && (
         <div style={S.errorBox}>
           ⚠️ Cannot connect to backend. Run:{" "}
