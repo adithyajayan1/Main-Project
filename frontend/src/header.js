@@ -30,28 +30,24 @@ export default function Header({ page, navigate, voiceOn, setVoiceOn, wsStatus, 
             HOME
           </button>
           
-          {user && (
-            <>
-              <button
-                onClick={() => navigate("dashboard")}
-                style={S.navLink(page === "dashboard")}
-              >
-                DASHBOARD
-              </button>
-              <button
-                onClick={() => navigate("workout")}
-                style={S.navLink(page === "workout")}
-              >
-                WORKOUT
-              </button>
-              <button
-                onClick={() => navigate("reports")}
-                style={S.navLink(page === "reports")}
-              >
-                REPORTS
-              </button>
-            </>
-          )}
+          <button
+            onClick={() => navigate("dashboard")}
+            style={S.navLink(page === "dashboard")}
+          >
+            DASHBOARD
+          </button>
+          <button
+            onClick={() => navigate("workout")}
+            style={S.navLink(page === "workout")}
+          >
+            WORKOUT
+          </button>
+          <button
+            onClick={() => navigate("reports")}
+            style={S.navLink(page === "reports")}
+          >
+            REPORTS
+          </button>
 
           <button
             onClick={() => navigate("tutorials")}
@@ -97,7 +93,7 @@ export default function Header({ page, navigate, voiceOn, setVoiceOn, wsStatus, 
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
             {user ? (
               <>
-                <span style={{ color: "#fff", fontSize: "14px", fontWeight: "600" }}>{user.name}</span>
+                <span style={{ color: "#1c1c1e", fontSize: "14px", fontWeight: "600" }}>{user.name}</span>
                 <button onClick={handleLogout} style={S.logoutBtn}>LOGOUT</button>
               </>
             ) : (

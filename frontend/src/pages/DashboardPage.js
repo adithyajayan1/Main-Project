@@ -60,22 +60,7 @@ export default function DashboardPage({ user, navigate }) {
         <StatCard icon="🎯" label="This Week" value={stats?.this_week || 0} />
       </div>
 
-      <section style={S.quickStart}>
-        <h2 style={{ fontSize: 14, letterSpacing: '0.2em', color: '#888', marginBottom: 20 }}>QUICK START</h2>
-        <div style={S.exerciseButtons}>
-          {EXERCISES.map(ex => (
-            <button 
-              key={ex.id}
-              onClick={() => navigate('workout', ex.id)}
-              style={{...S.authBtn, flex: 1, padding: "20px", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, background: "linear-gradient(145deg,#0e0e1a,#111120)", border: "1px solid #1a1a2e", color: "#fff"}}
-            >
-              <span style={{ fontSize: 24 }}>{ex.icon}</span>
-              <span style={{ fontSize: 12, letterSpacing: '0.1em' }}>{ex.label}</span>
-            </button>
-          ))}
-        </div>
-      </section>
-
+    
       <section style={S.recentSection}>
         <h2 style={{ fontSize: 14, letterSpacing: '0.2em', color: '#888', marginBottom: 20 }}>RECENT SESSIONS</h2>
         {recentSessions.length === 0 ? (
