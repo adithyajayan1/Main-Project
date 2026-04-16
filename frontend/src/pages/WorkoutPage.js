@@ -16,6 +16,7 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
 
   const videoRef    = useRef(null);
   const canvasRef   = useRef(null);
+  const recordCanvasRef = useRef(null);
   const wsRef       = useRef(null);
   const streamRef   = useRef(null);
   const intervalRef = useRef(null);
@@ -163,20 +164,24 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
       setRunning(true);
       if (voiceOn) speak(`Starting ${EXERCISES.find(e => e.id === selected)?.label}. Target is ${targetReps}.`);
       
-      // Start Video Recording
-      const stream = streamRef.current;
-      if (stream && typeof MediaRecorder !== 'undefined') {
+      // Start Video Recording using Canvas Stream
+      if (typeof MediaRecorder !== 'undefined') {
         videoChunksRef.current = [];
-        try {
-          const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-          mediaRecorder.ondataavailable = (e) => {
-            if (e.data.size > 0) videoChunksRef.current.push(e.data);
-          };
-          mediaRecorder.start(1000); // chunk every 1s
-          mediaRecorderRef.current = mediaRecorder;
-        } catch (err) {
-          console.warn("MediaRecorder initialisation failed:", err);
-        }
+        setTimeout(() => {
+          if (recordCanvasRef.current) {
+            try {
+              const canvasStream = recordCanvasRef.current.captureStream(15);
+              const mediaRecorder = new MediaRecorder(canvasStream, { mimeType: 'video/webm' });
+              mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) videoChunksRef.current.push(e.data);
+              };
+              mediaRecorder.start(1000); // chunk every 1s
+              mediaRecorderRef.current = mediaRecorder;
+            } catch (err) {
+              console.warn("MediaRecorder canvas initialisation failed:", err);
+            }
+          }
+        }, 100);
       }
 
       setTimeout(() => {
@@ -197,6 +202,39 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
         setStage(data.stage);
         setDepthPct(data.depth_pct);
         setFeedbacks(data.feedbacks || []);
+
+        if (recordCanvasRef.current && data.frame) {
+          const img = new Image();
+          img.onload = () => {
+             const canvas = recordCanvasRef.current;
+             const ctx = canvas.getContext('2d');
+             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+             
+             // Draw rep count
+             ctx.fillStyle = "#00e676";
+             ctx.font = "bold 34px 'Orbitron', sans-serif";
+             ctx.fillText(`REPS: ${data.count || 0}`, 20, 50);
+
+             // Draw stage
+             if (data.stage) {
+                ctx.fillStyle = "#ff9100";
+                ctx.font = "bold 22px 'Orbitron', sans-serif";
+                ctx.fillText(`STAGE: ${data.stage}`, 20, 85);
+             }
+
+             // Draw Feedback
+             if (data.feedbacks && data.feedbacks.length > 0) {
+                const [msg, colorStr] = data.feedbacks[0];
+                const colorHex = COLOR[colorStr] || "#fff";
+                ctx.fillStyle = "rgba(0,0,0,0.7)";
+                ctx.fillRect(0, canvas.height - 50, canvas.width, 50);
+                ctx.fillStyle = colorHex;
+                ctx.font = "bold 22px 'Orbitron', sans-serif";
+                ctx.fillText(`FEEDBACK: ${msg.toUpperCase()}`, 20, canvas.height - 18);
+             }
+          };
+          img.src = data.frame;
+        }
       } catch (err) { console.error(err); }
     };
 
@@ -255,6 +293,8 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
 
       <video ref={videoRef} style={{ display: "none" }} muted playsInline autoPlay />
       <canvas ref={canvasRef} style={{ display: "none" }} />
+      {/* Hidden canvas for recording video with overlay text */}
+      <canvas ref={recordCanvasRef} width={640} height={480} style={{ display: "none" }} />
 
       {!running && (
         <section style={S.selectorWrap}>
