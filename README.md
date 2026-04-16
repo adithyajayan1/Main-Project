@@ -1,4 +1,4 @@
-# FormFlex — AI Exercise Posture Correction
+# FormFlex — Exercise Posture Correction
 
 Real-time posture correction and rep counting using your webcam.
 
