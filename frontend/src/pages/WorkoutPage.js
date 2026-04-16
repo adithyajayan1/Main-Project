@@ -318,19 +318,23 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
           </div>
 
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 30, alignItems: "center", gap: 15 }}>
-            <span style={{ fontSize: 14, fontWeight: "bold", letterSpacing: "0.1em", color: "#aaa" }}>
+            <span style={{ fontSize: 13, fontWeight: "700", letterSpacing: "0.15em", color: "#c0bdb5", textTransform: "uppercase" }}>
               TARGET {selected === "plank" ? "TIME (SEC)" : "REPS"}:
             </span>
             <input 
               type="number" 
               value={targetReps} 
-              onChange={e => setTargetReps(Number(e.target.value))} 
+              onChange={e => setTargetReps(Math.max(1, Number(e.target.value)))} 
               min="1"
               max="999"
               style={{
-                background: "#0e0e1a", border: "1px solid #1a1a2e", borderRadius: 8,
-                padding: "8px 16px", color: "#00e676", fontSize: 20, fontWeight: "bold",
-                width: 80, textAlign: "center", fontFamily: "'Orbitron', sans-serif"
+                ...S.input,
+                width: 80, 
+                padding: "8px 0", 
+                textAlign: "center", 
+                fontSize: 20, 
+                fontWeight: "700",
+                color: "#3d8c6e", // Using the new theme accent color
               }}
             />
           </div>
