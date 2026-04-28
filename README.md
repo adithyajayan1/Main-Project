@@ -6,8 +6,9 @@ Real-time posture correction and rep counting using your webcam.
 
 ## Requirements
 
-- Python 3.10.13
+- Python 3.11
 - Node.js 18+
+- FFmpeg (`brew install ffmpeg` on Mac)
 - A webcam
 
 ---
@@ -24,7 +25,7 @@ cd Main-Project
 ### 2. Set up Python environment
 
 ```bash
-python -m venv venv
+PYENV_VERSION=3.11.14 python -m venv venv
 source venv/bin/activate       # Mac/Linux
 # venv\Scripts\activate        # Windows
 pip install -r requirements.txt
@@ -56,7 +57,7 @@ cd frontend
 npm start
 ```
 
-Open **http://localhost:3000** in your browser.
+Open **http://localhost:3000** in your browser and create an account to get started.
 
 ---
 
@@ -68,8 +69,22 @@ Push Up · Squat · Lunges · Plank
 
 ---
 
+## Features
+
+- Real-time pose detection with red/green skeleton feedback (red = bad form, green = good form)
+- Rep counting — only counts reps when form is correct
+- Voice feedback via browser Web Speech API
+- Set a target rep/time goal — a completion overlay appears when reached, letting you keep going or stop
+- Session recording — saved as MP4 and downloaded to your browser on stop
+- Dashboard with workout history, streak, and stats
+- Reports page with session charts (week/month/year)
+
+---
+
 ## Notes
 
 - Allow camera permissions when the browser asks
 - Use **Chrome** for best voice feedback support
 - If you see "No pose detected" — move back so your full body is in frame
+- Login is required to access workouts, dashboard, and reports
+- The database (`gymlytics.db`) is stored locally — your data stays on your machine

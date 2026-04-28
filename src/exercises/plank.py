@@ -45,13 +45,6 @@ def process(image, idx, state):
 
     nose = idx.get(0)
 
-    # Draw body line
-    cv2.line(image, shoulder, hip,    (255, 165, 0), 3)
-    cv2.line(image, hip,      ankle,  (255, 165, 0), 3)
-    cv2.circle(image, shoulder, 7, (0, 200, 255), cv2.FILLED)
-    cv2.circle(image, hip,      7, (0, 200, 255), cv2.FILLED)
-    cv2.circle(image, ankle,    7, (0, 200, 255), cv2.FILLED)
-
     is_form_valid = True
 
     # ── 0. HORIZONTAL INCLINATION ────────────────────────────────────────────
@@ -90,7 +83,6 @@ def process(image, idx, state):
 
     # SHOULDER OVER WRIST
     if wrist:
-        cv2.line(image, shoulder, wrist, (100,200,255), 1)
         sw_diff = abs(shoulder[0] - wrist[0])
         if sw_diff > SHOULDER_WRIST_X:
             feedbacks.append(("Keep wrists under shoulders!", "orange"))

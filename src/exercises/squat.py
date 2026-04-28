@@ -37,15 +37,6 @@ def process(image, idx, state):
     opp_hip  = idx.get(23) if has_right else idx.get(24)
     opp_knee = idx.get(25) if has_right else idx.get(26)
 
-    # Draw skeleton
-    cv2.line(image, hip, knee,   (255, 0, 255), 4)
-    cv2.line(image, knee, ankle, (255, 0, 255), 4)
-    cv2.circle(image, knee,  8, (0, 255, 255), cv2.FILLED)
-    cv2.circle(image, hip,   6, (0, 200, 255), cv2.FILLED)
-    cv2.circle(image, ankle, 6, (0, 200, 255), cv2.FILLED)
-    if shoulder:
-        cv2.line(image, shoulder, hip, (255, 165, 0), 2)
-
     is_form_valid = True
     knee_angle = ang((hip, knee), (knee, ankle))
 

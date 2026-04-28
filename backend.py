@@ -1,16 +1,17 @@
-import asyncio
 import base64
 import json
-import traceback
 import os
+import subprocess
+import tempfile
+import traceback
 from datetime import datetime, timedelta
 
 import cv2
 import mediapipe as mp
 import numpy as np
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status, UploadFile, File, Form, Header
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, UploadFile, File, Form, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.responses import FileResponse
 from typing import Optional
 from pydantic import BaseModel
 import jwt
@@ -46,7 +47,6 @@ def get_db():
 
 SECRET_KEY = "your-secret-key-change-in-production"
 ALGORITHM = "HS256"
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 def create_token(user_id: int) -> str:
     payload = {
@@ -57,9 +57,9 @@ def create_token(user_id: int) -> str:
 
 def verify_token(token: str) -> int:
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token.replace("Bearer ", ""), SECRET_KEY, algorithms=[ALGORITHM])
         return payload["user_id"]
-    except:
+    except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 class RegisterRequest(BaseModel):
@@ -91,22 +91,29 @@ def login(req: LoginRequest, db = Depends(get_db)):
     return {"token": token, "user": {"id": user.id, "email": user.email, "name": user.name}}
 
 @app.get("/api/dashboard/{user_id}")
-def get_dashboard(user_id: int, db = Depends(get_db)):
+def get_dashboard(user_id: int, authorization: str = Header(...), db = Depends(get_db)):
+    verify_token(authorization)
     user = db.query(User).get(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     sessions = db.query(Session).filter(Session.user_id == user_id).order_by(Session.created_at.desc()).all()
-    
+
+    # Real consecutive-day streak
     streak = 0
-    today = datetime.now().date()
+    if sessions:
+        today = datetime.now().date()
+        seen_days = sorted({s.created_at.date() for s in sessions}, reverse=True)
+        expected = today
+        for day in seen_days:
+            if day == expected or day == today:
+                streak += 1
+                expected = day - timedelta(days=1)
+            else:
+                break
     
-    for i, _ in enumerate(sessions):
-        # naive streak calculation
-        streak = i + 1  # Simplified for now
-        break
-    
-    total_minutes = sum(s.duration or 0 for s in sessions) // 60
+    total_seconds = sum(s.duration or 0 for s in sessions)
+    total_minutes = total_seconds // 60
     
     recent = []
     for s in sessions[:5]:
@@ -125,9 +132,6 @@ def get_dashboard(user_id: int, db = Depends(get_db)):
         "recent_sessions": recent
     }
 
-VIDEO_DIR = "recordings"
-os.makedirs(VIDEO_DIR, exist_ok=True)
-
 @app.post("/api/sessions")
 async def create_session(
     video: UploadFile = File(...),
@@ -137,32 +141,72 @@ async def create_session(
     authorization: str = Header(...),
     db = Depends(get_db)
 ):
-    try:
-        user_id = verify_token(authorization.replace("Bearer ", ""))
-    except Exception:
-        user_id = verify_token(authorization)
-        
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    video_path = f"{VIDEO_DIR}/{user_id}_{exercise}_{timestamp}.webm"
-    
-    with open(video_path, "wb") as f:
+    user_id = verify_token(authorization)
+
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+    webm_tmp = os.path.join(tempfile.gettempdir(), f"session_{timestamp}.webm")
+    mp4_tmp  = os.path.join(tempfile.gettempdir(), f"session_{timestamp}.mp4")
+
+    with open(webm_tmp, "wb") as f:
         f.write(await video.read())
-        
+
+    result = subprocess.run(
+        ["ffmpeg", "-y", "-i", webm_tmp, "-c:v", "libx264", "-preset", "fast", "-crf", "23", "-c:a", "aac", mp4_tmp],
+        capture_output=True
+    )
+    os.unlink(webm_tmp)
+    if result.returncode != 0:
+        raise HTTPException(status_code=500, detail="Video conversion failed")
+
     session = Session(
         user_id=user_id, exercise=exercise, rep_count=rep_count,
-        duration=duration, video_path=video_path, created_at=datetime.now()
+        duration=duration, video_path=mp4_tmp, created_at=datetime.now()
     )
     db.add(session)
     db.commit()
     return {"session_id": session.id, "status": "saved"}
 
+@app.post("/api/convert")
+async def convert_video(video: UploadFile = File(...)):
+    """Convert an uploaded WebM to MP4 without requiring auth — for guest users."""
+    webm_tmp = os.path.join(tempfile.gettempdir(), f"upload_{datetime.now().strftime('%Y%m%d%H%M%S%f')}.webm")
+    mp4_tmp  = webm_tmp.replace(".webm", ".mp4")
+
+    with open(webm_tmp, "wb") as f:
+        f.write(await video.read())
+
+    result = subprocess.run(
+        ["ffmpeg", "-y", "-i", webm_tmp, "-c:v", "libx264", "-preset", "fast", "-crf", "23", "-c:a", "aac", mp4_tmp],
+        capture_output=True
+    )
+    os.unlink(webm_tmp)
+    if result.returncode != 0:
+        raise HTTPException(status_code=500, detail="Video conversion failed")
+
+    filename = f"workout_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+    return FileResponse(mp4_tmp, media_type="video/mp4", filename=filename, background=None)
+
+@app.get("/api/sessions/{session_id}/download")
+def download_session(session_id: int, authorization: str = Header(...), db = Depends(get_db)):
+    requesting_user_id = verify_token(authorization)
+
+    session = db.query(Session).filter(Session.id == session_id).first()
+    if not session or not session.video_path:
+        raise HTTPException(status_code=404, detail="Session or video not found")
+
+    if session.user_id != requesting_user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not os.path.exists(session.video_path):
+        raise HTTPException(status_code=404, detail="Video file not found on disk")
+
+    filename = f"{session.exercise}_{session.rep_count}reps.mp4"
+    return FileResponse(session.video_path, media_type="video/mp4", filename=filename)
+
 @app.get("/api/reports/{user_id}")
 def get_reports(user_id: int, range: str = "week", authorization: str = Header(...), db = Depends(get_db)):
-    try:
-        verify_token(authorization.replace("Bearer ", ""))
-    except:
-        verify_token(authorization)
-        
+    verify_token(authorization)
+
     start_date = datetime.now()
     if range == "week":
         start_date = start_date - timedelta(days=7)
@@ -189,11 +233,13 @@ def get_reports(user_id: int, range: str = "week", authorization: str = Header(.
     exercises = [{"name": k, "count": v} for k, v in exercise_counts.items()]
     
     total_reps = sum(s.rep_count for s in sessions)
-    total_time = sum(s.duration or 0 for s in sessions) // 60
+    total_secs = sum(s.duration or 0 for s in sessions)
+    total_time = total_secs // 60
     
     return {
         "labels": labels, "sessions": session_counts, "exercises": exercises,
-        "total_sessions": len(sessions), "total_reps": total_reps, "total_time": total_time,
+        "total_sessions": len(sessions), "total_reps": total_reps,
+        "total_time": total_time, "total_secs": total_secs,
         "best_streak": 0
     }
 
@@ -201,10 +247,7 @@ def get_reports(user_id: int, range: str = "week", authorization: str = Header(.
 
 mp_drawing = mp.solutions.drawing_utils
 mp_holistic = mp.solutions.holistic
-mp_pose    = mp.solutions.pose
-
-pose_landmark_spec   = mp_drawing.DrawingSpec(thickness=5, circle_radius=2, color=(0,0,255))
-pose_connection_spec = mp_drawing.DrawingSpec(thickness=1, circle_radius=1, color=(0,255,0))
+mp_pose     = mp.solutions.pose
 
 EXERCISE_PROCESSORS = {
     "pushup":      process_pushup,
@@ -247,12 +290,6 @@ async def websocket_endpoint(websocket: WebSocket, exercise_type: str):
             results = pose.process(rgb)
             image.flags.writeable = True
 
-            mp_drawing.draw_landmarks(
-                image, results.pose_landmarks, mp_holistic.POSE_CONNECTIONS,
-                landmark_drawing_spec=pose_landmark_spec,
-                connection_drawing_spec=pose_connection_spec
-            )
-
             idx       = get_idx_to_coordinates(image, results)
             feedbacks = []
             depth_pct = 0.0
@@ -262,6 +299,17 @@ async def websocket_endpoint(websocket: WebSocket, exercise_type: str):
             except Exception:
                 traceback.print_exc()
                 feedbacks = [("Adjust your position", "orange")]
+
+            # Draw all 33 landmarks — red if bad form, green if good
+            has_bad = any(f[1] == "red" for f in feedbacks)
+            skel_bgr = (0, 0, 255) if has_bad else (0, 220, 0)
+            lm_spec   = mp_drawing.DrawingSpec(thickness=4, circle_radius=3, color=skel_bgr)
+            conn_spec = mp_drawing.DrawingSpec(thickness=2, circle_radius=1, color=skel_bgr)
+            mp_drawing.draw_landmarks(
+                image, results.pose_landmarks, mp_holistic.POSE_CONNECTIONS,
+                landmark_drawing_spec=lm_spec,
+                connection_drawing_spec=conn_spec
+            )
 
             _, buffer = cv2.imencode('.jpg', image, [cv2.IMWRITE_JPEG_QUALITY, 70])
             encoded   = base64.b64encode(buffer).decode('utf-8')

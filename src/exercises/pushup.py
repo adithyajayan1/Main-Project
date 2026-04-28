@@ -31,13 +31,6 @@ def process(image, idx, state):
         return image, state, [("No pose detected", "red"),
                                ("Face camera from the side", "gray")], 0.0
 
-    # Draw skeleton
-    cv2.line(image, shoulder, elbow, (255, 0, 255), 4)
-    cv2.line(image, elbow, wrist, (255, 0, 255), 4)
-    cv2.circle(image, elbow,    8, (0, 255, 255), cv2.FILLED)
-    cv2.circle(image, shoulder, 6, (0, 200, 255), cv2.FILLED)
-    cv2.circle(image, wrist,    6, (0, 200, 255), cv2.FILLED)
-
     is_form_valid = True
     ref_pt = ankle if ankle else knee
 
@@ -51,13 +44,9 @@ def process(image, idx, state):
 
     # ── FORM CHECKS ──────────────────────────────────────────────────────────
     # BODY LINE
+    body_angle = None
     if hip and ref_pt:
-        cv2.line(image, shoulder, hip,    (255,165,0), 2)
-        cv2.line(image, hip,      ref_pt, (255,165,0), 2)
         body_angle = ang((shoulder, hip), (hip, ref_pt))
-        cv2.putText(image, f"B:{int(body_angle)}d",
-                    (hip[0]+8, hip[1]-10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255,165,0), 1)
         if body_angle < BODY_MIN:
             feedbacks.append(("Hips sagging - keep body straight!", "red"))
             is_form_valid = False
@@ -121,6 +110,11 @@ def process(image, idx, state):
         state['stage'] = "UP"
         if is_form_valid:
             feedbacks.append(("Arms extended: ready", "green"))
+
+    if hip and ref_pt and body_angle is not None:
+        cv2.putText(image, f"B:{int(body_angle)}d",
+                    (hip[0]+8, hip[1]-10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255,255,0), 1)
 
     # Sort feedbacks to prioritize red > orange > green
     color_priority = {"red": 0, "orange": 1, "gray": 2, "green": 3}

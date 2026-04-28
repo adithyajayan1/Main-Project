@@ -100,7 +100,15 @@ export default function ReportsPage({ user }) {
             </div>
             <div style={S.statItem}>
               <span style={S.statLabel}>Total Time</span>
-              <span style={S.statVal}>{chartData?.total_time || 0} MIN</span>
+              <span style={S.statVal}>
+                {(() => {
+                  const secs = chartData?.total_secs || 0;
+                  if (secs === 0) return "0 MIN";
+                  const m = Math.floor(secs / 60);
+                  const s = secs % 60;
+                  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+                })()}
+              </span>
             </div>
             <div style={S.statItem}>
               <span style={S.statLabel}>Best Streak</span>

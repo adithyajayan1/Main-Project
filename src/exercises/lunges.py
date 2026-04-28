@@ -31,26 +31,14 @@ def process(image, idx, state):
     # ── Left leg ──────────────────────────────────────────────────────────────
     if has_left:
         lh, lk, la = idx[23], idx[25], idx[27]
-        cv2.line(image, lh, lk, (255, 0, 255), 4)
-        cv2.line(image, lk, la, (255, 0, 255), 4)
-        cv2.circle(image, lk, 8, (0, 255, 255), cv2.FILLED)
         a_left = ang((lh, lk), (lk, la))
         angles.append(('left', a_left, lh, lk, la))
-        cv2.putText(image, f"L:{int(a_left)}d",
-                    (lk[0]+8, lk[1]-10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,0), 2)
 
     # ── Right leg ─────────────────────────────────────────────────────────────
     if has_right:
         rh, rk, ra = idx[24], idx[26], idx[28]
-        cv2.line(image, rh, rk, (0, 255, 255), 4)
-        cv2.line(image, rk, ra, (0, 255, 255), 4)
-        cv2.circle(image, rk, 8, (255, 0, 255), cv2.FILLED)
         a_right = ang((rh, rk), (rk, ra))
         angles.append(('right', a_right, rh, rk, ra))
-        cv2.putText(image, f"R:{int(a_right)}d",
-                    (rk[0]+8, rk[1]-10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,0), 2)
 
     if not angles:
         return image, state, [("Adjust position", "gray")], 0.0
@@ -76,7 +64,6 @@ def process(image, idx, state):
     # ── FORM CHECKS ──────────────────────────────────────────────────────────
     # TORSO UPRIGHTNESS
     if shoulder and hip_ref:
-        cv2.line(image, shoulder, hip_ref, (255,165,0), 2)
         torso_lean = abs(shoulder[0] - hip_ref[0])
         if torso_lean > TORSO_LIM:
             feedbacks.append(("Keep torso upright!", "red"))

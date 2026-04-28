@@ -13,6 +13,7 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
   const [processedFrame, setProcessedFrame] = useState(null);
   const [camError, setCamError]             = useState(null);
   const [flashCount, setFlashCount]         = useState(false);
+  const [targetReached, setTargetReached]   = useState(false);
 
   const videoRef    = useRef(null);
   const canvasRef   = useRef(null);
@@ -23,8 +24,10 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
   const prevCount   = useRef(0);
 
   // Video recording refs
-  const mediaRecorderRef = useRef(null);
-  const videoChunksRef = useRef([]);
+  const mediaRecorderRef  = useRef(null);
+  const videoChunksRef    = useRef([]);
+  const sessionStartRef   = useRef(null);  // actual wall-clock start time
+  const saveIntentRef     = useRef(false); // only true when user explicitly stops
 
   // TTS refs
   const isSpeakingRef = useRef(false);
@@ -50,7 +53,9 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
   }, []);
 
   useEffect(() => () => {
-    stopSession();
+    clearInterval(intervalRef.current);
+    wsRef.current?.close();
+    streamRef.current?.getTracks().forEach(t => t.stop());
     window.speechSynthesis?.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -65,14 +70,11 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
     prevCount.current = count;
   }, [count, voiceOn, speak]);
 
-  // Auto-stop logic when target reached
+  // Show overlay when target reached — don't auto-close
   useEffect(() => {
-    if (running && count >= targetReps && count !== 0) {
-      const wait = setTimeout(() => {
-        if (voiceOn) speak(`Workout complete! You reached ${targetReps}.`);
-        stopSession();
-      }, 1000);
-      return () => clearTimeout(wait);
+    if (running && count >= targetReps && count !== 0 && !targetReached) {
+      setTargetReached(true);
+      if (voiceOn) speak(`Target reached! ${targetReps} done. Keep going or stop.`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [count, targetReps, running, voiceOn, speak]);
@@ -141,6 +143,9 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
     setCamError(null);
     setCount(0); setStage("--"); setDepthPct(0);
     setFeedbacks([]); setProcessedFrame(null);
+    setTargetReached(false);
+    sessionStartRef.current = Date.now();
+    saveIntentRef.current   = false;
     prevCount.current = 0;
     setWsStatus("connecting");
     window.speechSynthesis?.cancel();
@@ -242,30 +247,65 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
     ws.onclose = () => { setWsStatus("idle"); setRunning(false); };
   };
 
-  const stopSession = () => {
-    // 1. Stop video recording
+  const stopSession = (shouldSave = false) => {
+    const doSave = shouldSave || saveIntentRef.current;
+
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
-      
-      const currentCount = prevCount.current;
-      
-      setTimeout(() => {
-        const chunks = videoChunksRef.current;
-        if (chunks.length > 0 && token) {
-          const blob = new Blob(chunks, { type: 'video/webm' });
-          const formData = new FormData();
-          formData.append('video', blob, `session_${Date.now()}.webm`);
-          formData.append('exercise', selected);
-          formData.append('rep_count', currentCount);
-          formData.append('duration', selected === 'plank' ? currentCount : Math.floor(currentCount * 3)); // approx duration
-          
-          fetch('http://localhost:8000/api/sessions', {
-            method: 'POST',
-            body: formData,
-            headers: { 'Authorization': `Bearer ${token}` }
-          }).catch(console.error);
-        }
-      }, 500);
+
+      if (doSave) {
+        const currentCount   = prevCount.current;
+        const elapsedSeconds = sessionStartRef.current
+          ? Math.floor((Date.now() - sessionStartRef.current) / 1000)
+          : 0;
+
+        setTimeout(() => {
+          const chunks = videoChunksRef.current;
+          if (chunks.length > 0) {
+            const blob = new Blob(chunks, { type: 'video/webm' });
+            const formData = new FormData();
+            formData.append('video', blob, `session_${Date.now()}.webm`);
+
+            if (token) {
+              formData.append('exercise', selected);
+              formData.append('rep_count', currentCount);
+              formData.append('duration', elapsedSeconds);
+              (async () => {
+                try {
+                  const r = await fetch('http://localhost:8000/api/sessions', {
+                    method: 'POST', body: formData,
+                    headers: { 'Authorization': `Bearer ${token}` }
+                  });
+                  const { session_id } = await r.json();
+                  const mp4res = await fetch(
+                    `http://localhost:8000/api/sessions/${session_id}/download`,
+                    { headers: { 'Authorization': `Bearer ${token}` } }
+                  );
+                  const mp4blob = await mp4res.blob();
+                  const url = URL.createObjectURL(mp4blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `${selected}_${currentCount}reps.mp4`;
+                  a.click();
+                  setTimeout(() => URL.revokeObjectURL(url), 5000);
+                } catch (err) { console.error(err); }
+              })();
+            } else {
+              fetch('http://localhost:8000/api/convert', { method: 'POST', body: formData })
+                .then(r => r.blob())
+                .then(mp4blob => {
+                  const url = URL.createObjectURL(mp4blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `${selected}_${currentCount}reps.mp4`;
+                  a.click();
+                  setTimeout(() => URL.revokeObjectURL(url), 5000);
+                })
+                .catch(console.error);
+            }
+          }
+        }, 500);
+      }
     }
 
     clearInterval(intervalRef.current);
@@ -283,6 +323,7 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
     }
     setCount(0); setStage("--"); setDepthPct(0);
     setFeedbacks([]); prevCount.current = 0;
+    setTargetReached(false);
   };
 
   const exercise = EXERCISES.find(e => e.id === selected);
@@ -353,6 +394,35 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
               : "SELECT AN EXERCISE TO BEGIN"}
           </button>
         </section>
+      )}
+
+      {running && targetReached && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 100,
+          background: "rgba(0,0,0,0.75)",
+          display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center", gap: 20,
+        }}>
+          <div style={{ fontSize: 52 }}>🎯</div>
+          <p style={{ color: "#00e676", fontSize: 26, fontWeight: 800, letterSpacing: "0.1em", margin: 0 }}>
+            TARGET REACHED — {count} REPS!
+          </p>
+          <p style={{ color: "#c0bdb5", fontSize: 14, margin: 0 }}>Keep going or stop and save.</p>
+          <div style={{ display: "flex", gap: 16, marginTop: 8 }}>
+            <button
+              onClick={() => setTargetReached(false)}
+              style={{ padding: "12px 28px", background: "#1a3a2a", color: "#00e676", border: "1.5px solid #00e676", borderRadius: 8, fontWeight: 700, fontSize: 15, cursor: "pointer", letterSpacing: "0.1em" }}
+            >
+              ▶ KEEP GOING
+            </button>
+            <button
+              onClick={() => stopSession(true)}
+              style={{ padding: "12px 28px", background: "#3a1a1a", color: "#ff5252", border: "1.5px solid #ff5252", borderRadius: 8, fontWeight: 700, fontSize: 15, cursor: "pointer", letterSpacing: "0.1em" }}
+            >
+              ■ STOP & SAVE
+            </button>
+          </div>
+        </div>
       )}
 
       {running && (
@@ -460,7 +530,7 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
 
             <div style={S.ctrlRow}>
               <button onClick={resetCount} style={S.resetBtn}>↺ RESET</button>
-              <button onClick={stopSession} style={S.stopBtn}>■ STOP & SAVE</button>
+              <button onClick={() => stopSession(true)} style={S.stopBtn}>■ STOP & SAVE</button>
             </div>
 
           </div>
