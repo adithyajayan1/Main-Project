@@ -300,9 +300,15 @@ async def websocket_endpoint(websocket: WebSocket, exercise_type: str):
                 traceback.print_exc()
                 feedbacks = [("Adjust your position", "orange")]
 
-            # Draw all 33 landmarks — red if bad form, green if good
-            has_bad = any(f[1] == "red" for f in feedbacks)
-            skel_bgr = (0, 0, 255) if has_bad else (0, 220, 0)
+            # Draw all 33 landmarks — red if bad form, orange if warnings, green if good
+            has_red  = any(f[1] == "red"   for f in feedbacks)
+            has_warn = any(f[1] == "orange" for f in feedbacks)
+            if has_red:
+                skel_bgr = (0, 0, 255)      # Red
+            elif has_warn:
+                skel_bgr = (0, 165, 255)    # Orange
+            else:
+                skel_bgr = (0, 220, 0)      # Green
             lm_spec   = mp_drawing.DrawingSpec(thickness=4, circle_radius=3, color=skel_bgr)
             conn_spec = mp_drawing.DrawingSpec(thickness=2, circle_radius=1, color=skel_bgr)
             mp_drawing.draw_landmarks(

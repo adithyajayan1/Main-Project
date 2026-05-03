@@ -215,10 +215,11 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
              const ctx = canvas.getContext('2d');
              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
              
-             // Draw rep count
-             ctx.fillStyle = "#00e676";
-             ctx.font = "bold 34px 'Orbitron', sans-serif";
-             ctx.fillText(`REPS: ${data.count || 0}`, 20, 50);
+// Draw rep count or time
+              ctx.fillStyle = "#00e676";
+              ctx.font = "bold 34px 'Orbitron', sans-serif";
+              const countLabel = selected === "plank" ? "TIME" : "REPS";
+              ctx.fillText(`${countLabel}: ${data.count || 0}`, 20, 50);
 
              // Draw stage
              if (data.stage) {

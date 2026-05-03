@@ -67,7 +67,7 @@ def convert_arc(pt1, pt2, sagitta):
 
 
 def dot(vA, vB):
-    return vA[0] * vB[0] + vB[1] * vB[1]
+    return vA[0] * vB[0] + vA[1] * vB[1]
 
 
 def ang(lineA, lineB):
