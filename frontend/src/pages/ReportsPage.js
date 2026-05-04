@@ -23,7 +23,7 @@ export default function ReportsPage({ user }) {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`http://localhost:8000/api/reports/${user.id}?range=${timeRange}`, {
+    fetch(`http://localhost:8000/api/reports/${user.id}?period=${timeRange}`, {
       headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     })
       .then(res => res.json())

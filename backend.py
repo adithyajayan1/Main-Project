@@ -147,29 +147,29 @@ async def create_session(
     return {"session_id": session.id, "status": "saved"}
 
 @app.get("/api/reports/{user_id}")
-def get_reports(user_id: int, range: str = "week", authorization: str = Header(...), db = Depends(get_db)):
+def get_reports(user_id: int, period: str = "week", authorization: str = Header(...), db = Depends(get_db)):
     token = authorization.replace("Bearer ", "").strip()
     verify_token(token)
-        
+
     start_date = datetime.now()
-    if range == "week":
+    if period == "week":
         start_date = start_date - timedelta(days=7)
-    elif range == "month":
+    elif period == "month":
         start_date = start_date - timedelta(days=30)
     else:
         start_date = start_date - timedelta(days=365)
-        
+
     sessions = db.query(Session).filter(
         Session.user_id == user_id, Session.created_at >= start_date
     ).all()
-    
+
     date_counts = {}
     for s in sessions:
         date_str = s.created_at.strftime("%Y-%m-%d")
         date_counts[date_str] = date_counts.get(date_str, 0) + 1
 
     # Fill every day in the range with 0 so the chart has no gaps
-    num_days = 7 if range == "week" else (30 if range == "month" else 365)
+    num_days = 7 if period == "week" else (30 if period == "month" else 365)
     today = datetime.now().date()
     labels = [(today - timedelta(days=num_days - 1 - i)).strftime("%Y-%m-%d") for i in range(num_days)]
     session_counts = [date_counts.get(d, 0) for d in labels]
