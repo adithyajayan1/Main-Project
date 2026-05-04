@@ -104,7 +104,7 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
         } else {
           needsToSpeakRef.current = msg;
         }
-      }, 1000); // 1 second threshold
+      }, 500); // 0.5 second threshold
     }
   }, [feedbacks, voiceOn, speak]);
 
