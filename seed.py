@@ -84,22 +84,32 @@ PROFILE_CONFIG = {
     "beginner":   {"days": 14, "sessions_per_active_day": (1, 1), "active_day_chance": 0.55, "exercise_weights": [2, 2, 1, 1]},
 }
 
+GUARANTEED_STREAK = {
+    "heavy":      14,
+    "moderate":   7,
+    "specialist": 5,
+    "light":      2,
+    "beginner":   3,
+}
+
 def make_sessions(profile_key):
     cfg = PROFILE_CONFIG[profile_key]
+    guaranteed_days = GUARANTEED_STREAK.get(profile_key, 0)
     sessions = []
     today = datetime.now().date()
 
     for days_ago in range(cfg["days"], -1, -1):
-        if random.random() > cfg["active_day_chance"]:
-            continue
         day = today - timedelta(days=days_ago)
+        # Force active for guaranteed streak days closest to today
+        force_active = days_ago <= guaranteed_days
+        if not force_active and random.random() > cfg["active_day_chance"]:
+            continue
         n = random.randint(*cfg["sessions_per_active_day"])
         for _ in range(n):
             exercise = random.choices(EXERCISES, weights=cfg["exercise_weights"])[0]
             lo, hi = EXERCISE_REPS[exercise]
             rep_count = random.randint(lo, hi)
             duration = rep_count if exercise == "plank" else rep_count * 3
-            # Spread sessions across the day
             hour = random.randint(6, 21)
             minute = random.randint(0, 59)
             created_at = datetime.combine(day, datetime.min.time()).replace(hour=hour, minute=minute)

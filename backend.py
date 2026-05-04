@@ -136,10 +136,7 @@ async def create_session(
     authorization: str = Header(...),
     db = Depends(get_db)
 ):
-    try:
-        user_id = verify_token(authorization.replace("Bearer ", ""))
-    except Exception:
-        user_id = verify_token(authorization)
+    user_id = verify_token(authorization.replace("Bearer ", "").strip())
 
     session = Session(
         user_id=user_id, exercise=req.exercise, rep_count=req.rep_count,
@@ -151,10 +148,8 @@ async def create_session(
 
 @app.get("/api/reports/{user_id}")
 def get_reports(user_id: int, range: str = "week", authorization: str = Header(...), db = Depends(get_db)):
-    try:
-        verify_token(authorization.replace("Bearer ", ""))
-    except:
-        verify_token(authorization)
+    token = authorization.replace("Bearer ", "").strip()
+    verify_token(token)
         
     start_date = datetime.now()
     if range == "week":
