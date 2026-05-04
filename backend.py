@@ -1,14 +1,12 @@
-import asyncio
 import base64
 import json
 import traceback
-import os
 from datetime import datetime, timedelta
 
 import cv2
 import mediapipe as mp
 import numpy as np
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status, UploadFile, File, Form, Header
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from typing import Optional
