@@ -3,7 +3,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime
 import hashlib
 
-DATABASE_URL = "postgresql://postgres:sahibaharoon@db.riztmiuuegbokdebqjdw.supabase.co:5432/postgres"
+DATABASE_URL = "postgresql://postgres.riztmiuuegbokdebqjdw:sahibaharoon@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres"
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
