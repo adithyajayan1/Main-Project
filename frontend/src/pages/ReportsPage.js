@@ -18,15 +18,17 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointEleme
 
 export default function ReportsPage({ user }) {
   const [chartData, setChartData] = useState(null);
-  const [timeRange, setTimeRange] = useState('month'); // week, month, year
+  const [loading, setLoading] = useState(true);
+  const [timeRange, setTimeRange] = useState('month');
 
   useEffect(() => {
+    setLoading(true);
     fetch(`http://localhost:8000/api/reports/${user.id}?range=${timeRange}`, {
       headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     })
       .then(res => res.json())
-      .then(data => setChartData(data))
-      .catch(err => console.error("Reports fetch error:", err));
+      .then(data => { setChartData(data); setLoading(false); })
+      .catch(err => { console.error("Reports fetch error:", err); setLoading(false); });
   }, [user.id, timeRange]);
 
   const sessionsChartData = {
@@ -65,7 +67,9 @@ export default function ReportsPage({ user }) {
       {/* Sessions Over Time Chart */}
       <div style={S.chartCard}>
         <h2 style={S.chartTitle}>SESSIONS OVER TIME</h2>
-        {chartData?.labels?.length > 0 ? (
+        {loading ? (
+          <div style={{ color: '#555', textAlign: 'center', padding: 40 }}>Loading...</div>
+        ) : chartData?.sessions?.some(v => v > 0) ? (
           <div style={{ height: 300 }}>
             <Line data={sessionsChartData} options={{ responsive: true, maintainAspectRatio: false }} />
           </div>
@@ -78,7 +82,9 @@ export default function ReportsPage({ user }) {
       <div style={S.chartRow}>
         <div style={S.chartCard}>
           <h2 style={S.chartTitle}>DISTRIBUTION</h2>
-          {chartData?.exercises?.length > 0 ? (
+          {loading ? (
+            <div style={{ color: '#555', textAlign: 'center', padding: 40 }}>Loading...</div>
+          ) : chartData?.exercises?.length > 0 ? (
             <div style={{ height: 250, display: 'flex', justifyContent: 'center' }}>
               <Doughnut data={exerciseChartData} options={{ responsive: true, maintainAspectRatio: false }} />
             </div>

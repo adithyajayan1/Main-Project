@@ -96,15 +96,16 @@ def get_dashboard(user_id: int, db = Depends(get_db)):
     
     sessions = db.query(Session).filter(Session.user_id == user_id).order_by(Session.created_at.desc()).all()
     
-    streak = 0
     today = datetime.now().date()
+    active_day_set = {s.created_at.date() for s in sessions}
+    streak = 0
+    # Start from today; fall back to yesterday if no session yet today
+    check = today if today in active_day_set else today - timedelta(days=1)
+    while check in active_day_set:
+        streak += 1
+        check -= timedelta(days=1)
     
-    for i, _ in enumerate(sessions):
-        # naive streak calculation
-        streak = i + 1  # Simplified for now
-        break
-    
-    total_minutes = sum(s.duration or 0 for s in sessions) // 60
+    total_minutes = round(sum(s.duration or 0 for s in sessions) / 60, 1)
     
     recent = []
     for s in sessions[:5]:

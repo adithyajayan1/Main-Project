@@ -1,5 +1,5 @@
 """
-Seed script — creates 5 demo accounts with varied workout history.
+Seed script — creates demo accounts with varied workout history.
 Run once: python seed.py
 Safe to re-run: skips accounts that already exist.
 """
@@ -39,6 +39,30 @@ ACCOUNTS = [
         "email": "taylor@demo.com",
         "password": "demo1234",
         "profile": "beginner",    # 5–8 sessions, all recent (last 2 weeks)
+    },
+    {
+        "name": "Sahiba",
+        "email": "sahiba@demo.com",
+        "password": "demo1234",
+        "profile": "heavy",
+    },
+    {
+        "name": "Adithya",
+        "email": "adithya@demo.com",
+        "password": "demo1234",
+        "profile": "moderate",
+    },
+    {
+        "name": "Ann",
+        "email": "ann@demo.com",
+        "password": "demo1234",
+        "profile": "specialist",
+    },
+    {
+        "name": "Sheez",
+        "email": "sheez@demo.com",
+        "password": "demo1234",
+        "profile": "light",
     },
 ]
 
