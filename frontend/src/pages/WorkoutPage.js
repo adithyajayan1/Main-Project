@@ -25,6 +25,7 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
   // Video recording refs
   const mediaRecorderRef = useRef(null);
   const videoChunksRef = useRef([]);
+  const recordingMimeRef = useRef('');
 
   // TTS refs
   const isSpeakingRef = useRef(false);
@@ -170,8 +171,12 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
         setTimeout(() => {
           if (recordCanvasRef.current) {
             try {
+              const mimeType = MediaRecorder.isTypeSupported('video/mp4')
+                ? 'video/mp4'
+                : 'video/webm';
+              recordingMimeRef.current = mimeType;
               const canvasStream = recordCanvasRef.current.captureStream(15);
-              const mediaRecorder = new MediaRecorder(canvasStream, { mimeType: 'video/webm' });
+              const mediaRecorder = new MediaRecorder(canvasStream, { mimeType });
               mediaRecorder.ondataavailable = (e) => {
                 if (e.data.size > 0) videoChunksRef.current.push(e.data);
               };
@@ -210,10 +215,15 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
              const ctx = canvas.getContext('2d');
              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
              
-             // Draw rep count
+             // Draw rep count / plank time
              ctx.fillStyle = "#00e676";
              ctx.font = "bold 34px 'Orbitron', sans-serif";
-             ctx.fillText(`REPS: ${data.count || 0}`, 20, 50);
+             ctx.fillText(
+               selected === 'plank'
+                 ? `TIME: ${data.count || 0}s`
+                 : `REPS: ${data.count || 0}`,
+               20, 50
+             );
 
              // Draw stage
              if (data.stage) {
@@ -246,24 +256,33 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
     // 1. Stop video recording
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
-      
+
       const currentCount = prevCount.current;
-      
+      const duration = selected === 'plank' ? currentCount : Math.floor(currentCount * 3);
+
+      // Save session metadata to backend for stats
+      if (token) {
+        fetch('http://localhost:8000/api/sessions', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ exercise: selected, rep_count: currentCount, duration }),
+        }).catch(console.error);
+      }
+
       setTimeout(() => {
         const chunks = videoChunksRef.current;
-        if (chunks.length > 0 && token) {
-          const blob = new Blob(chunks, { type: 'video/webm' });
-          const formData = new FormData();
-          formData.append('video', blob, `session_${Date.now()}.webm`);
-          formData.append('exercise', selected);
-          formData.append('rep_count', currentCount);
-          formData.append('duration', selected === 'plank' ? currentCount : Math.floor(currentCount * 3)); // approx duration
-          
-          fetch('http://localhost:8000/api/sessions', {
-            method: 'POST',
-            body: formData,
-            headers: { 'Authorization': `Bearer ${token}` }
-          }).catch(console.error);
+        if (chunks.length > 0) {
+          const mimeType = recordingMimeRef.current || 'video/webm';
+          const ext = mimeType === 'video/mp4' ? 'mp4' : 'webm';
+          const blob = new Blob(chunks, { type: mimeType });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `workout_${selected}_${currentCount}reps_${Date.now()}.${ext}`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
         }
       }, 500);
     }

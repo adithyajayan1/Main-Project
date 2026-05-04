@@ -125,15 +125,15 @@ def get_dashboard(user_id: int, db = Depends(get_db)):
         "recent_sessions": recent
     }
 
-VIDEO_DIR = "recordings"
-os.makedirs(VIDEO_DIR, exist_ok=True)
+
+class SessionRequest(BaseModel):
+    exercise: str
+    rep_count: int
+    duration: Optional[int] = None
 
 @app.post("/api/sessions")
 async def create_session(
-    video: UploadFile = File(...),
-    exercise: str = Form(...),
-    rep_count: int = Form(...),
-    duration: Optional[int] = Form(None),
+    req: SessionRequest,
     authorization: str = Header(...),
     db = Depends(get_db)
 ):
@@ -141,16 +141,10 @@ async def create_session(
         user_id = verify_token(authorization.replace("Bearer ", ""))
     except Exception:
         user_id = verify_token(authorization)
-        
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    video_path = f"{VIDEO_DIR}/{user_id}_{exercise}_{timestamp}.webm"
-    
-    with open(video_path, "wb") as f:
-        f.write(await video.read())
-        
+
     session = Session(
-        user_id=user_id, exercise=exercise, rep_count=rep_count,
-        duration=duration, video_path=video_path, created_at=datetime.now()
+        user_id=user_id, exercise=req.exercise, rep_count=req.rep_count,
+        duration=req.duration, created_at=datetime.now()
     )
     db.add(session)
     db.commit()
@@ -179,22 +173,39 @@ def get_reports(user_id: int, range: str = "week", authorization: str = Header(.
     for s in sessions:
         date_str = s.created_at.strftime("%Y-%m-%d")
         date_counts[date_str] = date_counts.get(date_str, 0) + 1
-        
-    labels = sorted(date_counts.keys())
-    session_counts = [date_counts[d] for d in labels]
-    
+
+    # Fill every day in the range with 0 so the chart has no gaps
+    num_days = 7 if range == "week" else (30 if range == "month" else 365)
+    today = datetime.now().date()
+    labels = [(today - timedelta(days=num_days - 1 - i)).strftime("%Y-%m-%d") for i in range(num_days)]
+    session_counts = [date_counts.get(d, 0) for d in labels]
+
     exercise_counts = {}
     for s in sessions:
         exercise_counts[s.exercise] = exercise_counts.get(s.exercise, 0) + 1
     exercises = [{"name": k, "count": v} for k, v in exercise_counts.items()]
-    
+
     total_reps = sum(s.rep_count for s in sessions)
-    total_time = sum(s.duration or 0 for s in sessions) // 60
-    
+    total_time = round(sum(s.duration or 0 for s in sessions) / 60, 1)
+
+    # Best streak: longest consecutive days with at least one session (all-time, not range-limited)
+    all_sessions = db.query(Session).filter(Session.user_id == user_id).all()
+    active_days = sorted({s.created_at.date() for s in all_sessions}, reverse=True)
+    best_streak = 0
+    current_streak = 0
+    prev_day = None
+    for day in active_days:
+        if prev_day is None or (prev_day - day).days == 1:
+            current_streak += 1
+            best_streak = max(best_streak, current_streak)
+        else:
+            current_streak = 1
+        prev_day = day
+
     return {
         "labels": labels, "sessions": session_counts, "exercises": exercises,
         "total_sessions": len(sessions), "total_reps": total_reps, "total_time": total_time,
-        "best_streak": 0
+        "best_streak": best_streak
     }
 
 # ── WebSocket ────────────────────────────────────────────────

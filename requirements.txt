@@ -7,3 +7,5 @@ websockets
 python-multipart
 sqlalchemy
 PyJWT
+psycopg2-binary
+python-dotenv

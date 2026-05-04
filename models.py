@@ -3,9 +3,9 @@ from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime
 import hashlib
 
-DATABASE_URL = "sqlite:///./gymlytics.db"
+DATABASE_URL = "postgresql://postgres:sahibaharoon@db.riztmiuuegbokdebqjdw.supabase.co:5432/postgres"
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
