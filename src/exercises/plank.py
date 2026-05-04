@@ -16,6 +16,7 @@ ELBOW_BENT_MAX   = 100   # elbow angle: forearm plank
 SHOULDER_SYM_LIM = 25    # L/R shoulder y: body twist
 HIP_SYM_LIM      = 20    # L/R hip y: hip rotation
 NECK_ALIGN_LIM   = 35    # nose y vs shoulder: neck neutral
+MIN_ELEVATION    = 40    # ankle y must be > shoulder y by this much (shoulder elevated off floor)
 
 def process(image, idx, state):
     feedbacks = []
@@ -59,6 +60,14 @@ def process(image, idx, state):
     inclination = ang((shoulder, ankle), (ankle, vertical_ref))
     if inclination < 50 or inclination > 130:
         feedbacks.append(("Get in horizontal position!", "red"))
+        is_form_valid = False
+
+    # ── 0b. ELEVATION CHECK (rejects lying flat on floor) ────────────────────
+    # In a real plank the shoulder is raised — ankle y pixel > shoulder y pixel by MIN_ELEVATION.
+    # When lying flat both are at the same height so this fails.
+    elevation = ankle[1] - shoulder[1]
+    if elevation < MIN_ELEVATION:
+        feedbacks.append(("Get into plank position!", "red"))
         is_form_valid = False
 
     # ── FORM CHECKS ──────────────────────────────────────────────────────────

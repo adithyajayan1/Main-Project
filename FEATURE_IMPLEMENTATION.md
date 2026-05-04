@@ -1,517 +1,329 @@
 # Feature Implementation Guide
 
-This document describes how the following features are implemented in the GymLytics application:
+This document describes how the following features are implemented in the FormFlex application:
 
-1. Dashboard
-2. Video Recording with Start/Stop (rep count/plank time)
-3. User Login
-4. Report Graphs (sessions per user)
+1. [Dashboard](#1-dashboard)
+2. [Video Recording with Browser Download](#2-video-recording-with-browser-download)
+3. [User Login & Registration](#3-user-login--registration)
+4. [Report Graphs](#4-report-graphs)
+5. [Plank Elevation Detection Bug Fix](#5-plank-elevation-detection-bug-fix)
+
+---
+
+## Database Schema
+
+Two tables, auto-created by SQLAlchemy on first backend startup.
+
+### `users`
+| Column | Type | Details |
+|---|---|---|
+| `id` | Integer | Primary key |
+| `email` | String | Unique, indexed |
+| `password_hash` | String | SHA-256 hash (no salt) |
+| `name` | String | Display name |
+| `created_at` | DateTime | UTC timestamp |
+
+### `sessions`
+| Column | Type | Details |
+|---|---|---|
+| `id` | Integer | Primary key |
+| `user_id` | Integer | FK → users.id |
+| `exercise` | String | `pushup` / `squat` / `lunges` / `plank` |
+| `rep_count` | Integer | Reps completed, or seconds held (plank) |
+| `duration` | Integer | Estimated seconds: `rep_count × 3` for reps, `rep_count` for plank |
+| `video_path` | String | Nullable — legacy column, no longer written to |
+| `created_at` | DateTime | UTC timestamp |
+
+```python
+# models.py
+DATABASE_URL = "postgresql://..."  # Supabase connection string
+
+class User(Base):
+    __tablename__ = "users"
+    id            = Column(Integer, primary_key=True, index=True)
+    email         = Column(String, unique=True, index=True)
+    password_hash = Column(String)
+    name          = Column(String)
+    created_at    = Column(DateTime, default=datetime.utcnow)
+    sessions      = relationship("Session", back_populates="user")
+
+    def set_password(self, password):
+        self.password_hash = hashlib.sha256(password.encode()).hexdigest()
+
+    def verify_password(self, password):
+        return self.password_hash == hashlib.sha256(password.encode()).hexdigest()
+
+class Session(Base):
+    __tablename__ = "sessions"
+    id         = Column(Integer, primary_key=True, index=True)
+    user_id    = Column(Integer, ForeignKey("users.id"))
+    exercise   = Column(String)
+    rep_count  = Column(Integer)
+    duration   = Column(Integer, nullable=True)
+    video_path = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    user       = relationship("User", back_populates="sessions")
+```
 
 ---
 
 ## 1. Dashboard
 
 ### Overview
-The dashboard serves as the home screen after user login, displaying an overview of workout statistics, recent activity, and quick access to exercises.
+Home screen after login. Displays workout stats and recent session history. Fetches from the backend on mount.
 
 ### Implementation
 
 **Frontend (`frontend/src/pages/DashboardPage.js`)**
-
 ```javascript
-export default function DashboardPage({ user, navigate }) {
-  const [stats, setStats] = useState(null);
-  const [recentSessions, setRecentSessions] = useState([]);
-
-  useEffect(() => {
-    fetch(`/api/dashboard/${user.id}`)
-      .then(res => res.json())
-      .then(data => {
-        setStats(data.stats);
-        setRecentSessions(data.recent_sessions);
-      });
-  }, [user.id]);
-
-  return (
-    <div style={S.dashboard}>
-      {/* Welcome Header */}
-      <h1>Welcome back, {user.name}!</h1>
-
-      {/* Quick Stats Cards */}
-      <div style={S.statsGrid}>
-        <StatCard icon="🔥" label="Streak" value={`${stats?.streak} days`} />
-        <StatCard icon="🏋️" label="Total Workouts" value={stats?.total_workouts} />
-        <StatCard icon="⏱️" label="Total Time" value={formatTime(stats?.total_minutes)} />
-        <StatCard icon="🎯" label="This Week" value={stats?.this_week} />
-      </div>
-
-      {/* Quick Start Section */}
-      <section style={S.quickStart}>
-        <h2>Quick Start</h2>
-        <div style={S.exerciseButtons}>
-          {EXERCISES.map(ex => (
-            <button onClick={() => navigate('workout', ex.id)}>
-              {ex.icon} {ex.label}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* Recent Sessions */}
-      <section style={S.recentSection}>
-        <h2>Recent Sessions</h2>
-        {recentSessions.map(session => (
-          <SessionCard session={session} onClick={() => navigate('session', session.id)} />
-        ))}
-      </section>
-    </div>
-  );
-}
+useEffect(() => {
+  fetch(`http://localhost:8000/api/dashboard/${user.id}`, {
+    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+  })
+    .then(res => res.json())
+    .then(data => {
+      setStats(data.stats);
+      setRecentSessions(data.recent_sessions);
+    });
+}, [user.id]);
 ```
 
-**Backend API (`backend.py`)**
-
+**Backend (`backend.py` — `GET /api/dashboard/{user_id}`)**
 ```python
 @app.get("/api/dashboard/{user_id}")
-def get_dashboard(user_id: int):
-    user = db.query(User).get(user_id)
-    stats = {
-        "streak": calculate_streak(user_id),
-        "total_workouts": count_workouts(user_id),
-        "total_minutes": get_total_time(user_id),
-        "this_week": count_this_week(user_id)
+def get_dashboard(user_id: int, db = Depends(get_db)):
+    sessions = db.query(Session).filter(Session.user_id == user_id).order_by(Session.created_at.desc()).all()
+    total_minutes = sum(s.duration or 0 for s in sessions) // 60
+    return {
+        "stats": {
+            "streak": 1 if sessions else 0,          # simplified
+            "total_workouts": len(sessions),
+            "total_minutes": total_minutes,
+            "this_week": len([s for s in sessions if (datetime.now() - s.created_at).days <= 7])
+        },
+        "recent_sessions": [serialize(s) for s in sessions[:5]]
     }
-    recent = get_recent_sessions(user_id, limit=5)
-    return {"stats": stats, "recent_sessions": recent}
 ```
 
 ---
 
-## 2. Video Recording with Start/Stop (Rep Count/Plank Time)
+## 2. Video Recording with Browser Download
 
 ### Overview
-This feature records workout sessions with video, tracking rep counts for exercises like pushups/squats/lunges and time for plank exercises.
+Records the workout session from a hidden canvas (which has the processed pose frame + rep/time overlay drawn onto it) using the `MediaRecorder` API. When the session ends — either via target reached or manual stop — the recording is downloaded directly to the user's browser as MP4 (or WebM fallback). No video is stored on the server.
 
-### Implementation
-
-**Frontend - Recording Controls (`frontend/src/pages/WorkoutPage.js`)**
+### MIME type detection
+At session start, the preferred format is MP4 (supported by Safari and Chrome 130+). Firefox falls back to WebM.
 
 ```javascript
-const [recording, setRecording] = useState(false);
-const [videoChunks, setVideoChunks] = useState([]);
-const mediaRecorderRef = useRef(null);
-
-// Start Recording
-const startRecording = () => {
-  const stream = streamRef.current;
-  const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-  
-  mediaRecorder.ondataavailable = (e) => {
-    if (e.data.size > 0) {
-      setVideoChunks(prev => [...prev, e.data]);
-    }
-  };
-
-  mediaRecorder.start(1000); // Capture every second
-  mediaRecorderRef.current = mediaRecorder;
-  setRecording(true);
+// WorkoutPage.js — startSession()
+const mimeType = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm';
+recordingMimeRef.current = mimeType;
+const mediaRecorder = new MediaRecorder(canvasStream, { mimeType });
+mediaRecorder.ondataavailable = (e) => {
+  if (e.data.size > 0) videoChunksRef.current.push(e.data);
 };
-
-// Stop Recording and Save
-const stopRecording = () => {
-  mediaRecorderRef.current?.stop();
-  setRecording(false);
-  
-  const blob = new Blob(videoChunks, { type: 'video/webm' });
-  const formData = new FormData();
-  formData.append('video', blob, `session_${Date.now()}.webm`);
-  formData.append('exercise', selected);
-  formData.append('rep_count', count);
-  formData.append('duration', selected === 'plank' ? count : null); // plank uses count as seconds
-  
-  fetch('/api/sessions', {
-    method: 'POST',
-    body: formData,
-    headers: { 'Authorization': `Bearer ${token}` }
-  });
-  
-  setVideoChunks([]);
-};
-
-// UI Controls in Workout Page
-<div style={S.controls}>
-  {!recording ? (
-    <button onClick={startRecording}>● START RECORDING</button>
-  ) : (
-    <button onClick={stopRecording}>■ STOP & SAVE</button>
-  )}
-</div>
+mediaRecorder.start(1000); // 1s chunks
 ```
 
-**Backend - Session Storage (`backend.py`)**
+### Canvas overlays drawn per frame (visible in recording)
+- Top-left: `REPS: N` (or `TIME: Ns` for plank) in green Orbitron
+- Bottom strip: live feedback message in colour-coded text
 
+```javascript
+// ws.onmessage — drawn onto recordCanvasRef
+ctx.fillText(selected === 'plank' ? `TIME: ${data.count}s` : `REPS: ${data.count}`, 20, 50);
+// feedback bar at bottom...
+```
+
+### Save and download
+```javascript
+// WorkoutPage.js — saveAndDownload(exercise, count, duration)
+const saveAndDownload = (exerciseName, finalCount, duration) => {
+  if (mediaRecorderRef.current?.state !== "inactive") mediaRecorderRef.current.stop();
+
+  // 1. POST metadata to backend for stats
+  fetch('http://localhost:8000/api/sessions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ exercise: exerciseName, rep_count: finalCount, duration }),
+  });
+
+  // 2. Download video to browser
+  setTimeout(() => {
+    const mimeType = recordingMimeRef.current || 'video/webm';
+    const ext = mimeType === 'video/mp4' ? 'mp4' : 'webm';
+    const blob = new Blob(videoChunksRef.current, { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `workout_${exerciseName}_${finalCount}reps_${Date.now()}.${ext}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, 500);
+};
+```
+
+**Backend (`backend.py` — `POST /api/sessions`)** — accepts JSON only, no file upload:
 ```python
-from fastapi import UploadFile, File
-import os
-from datetime import datetime
-
-VIDEO_DIR = "recordings"
-os.makedirs(VIDEO_DIR, exist_ok=True)
+class SessionRequest(BaseModel):
+    exercise: str
+    rep_count: int
+    duration: Optional[int] = None
 
 @app.post("/api/sessions")
-async def create_session(
-    video: UploadFile = File(...),
-    exercise: str = Form(...),
-    rep_count: int = Form(...),
-    duration: Optional[int] = Form(None),
-    token: str = Header(...)
-):
-    user_id = verify_token(token)
-    
-    # Save video file
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    video_path = f"{VIDEO_DIR}/{user_id}_{exercise}_{timestamp}.webm"
-    
-    with open(video_path, "wb") as f:
-        f.write(await video.read())
-    
-    # Save session to database
+async def create_session(req: SessionRequest, authorization: str = Header(...), db = Depends(get_db)):
+    user_id = verify_token(authorization.replace("Bearer ", ""))
     session = Session(
-        user_id=user_id,
-        exercise=exercise,
-        rep_count=rep_count,
-        duration=duration,
-        video_path=video_path,
+        user_id=user_id, exercise=req.exercise,
+        rep_count=req.rep_count, duration=req.duration,
         created_at=datetime.now()
     )
-    db.add(session)
-    db.commit()
-    
+    db.add(session); db.commit()
     return {"session_id": session.id, "status": "saved"}
 ```
 
+### Completion modal (target reached)
+When `count >= targetReps`, instead of immediately saving, the session tears down and a modal appears with:
+- Exercise name, rep/time count, estimated duration
+- **SAVE & DOWNLOAD** → calls `saveAndDownload()` then closes modal
+- **DISCARD** → closes modal without saving
+
+Manual "STOP & SAVE" button skips the modal and saves immediately.
+
 ---
 
-## 3. User Login
+## 3. User Login & Registration
 
 ### Overview
-Implements secure user authentication with JWT tokens, registration, and session management.
+JWT-based authentication. Token stored in `localStorage`. Protected pages (`workout`, `dashboard`, `reports`) redirect to login if no user in state.
 
-### Implementation
-
-**Database Models (`models.py`)**
-
+### Backend
 ```python
-from sqlalchemy import Column, Integer, String, DateTime, Boolean
-from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime
-import hashlib
-
-Base = declarative_base()
-
-class User(Base):
-    __tablename__ = "users"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True)
-    password_hash = Column(String)
-    name = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
-    def set_password(self, password):
-        self.password_hash = hashlib.sha256(password.encode()).hexdigest()
-    
-    def verify_password(self, password):
-        return self.password_hash == hashlib.sha256(password.encode()).hexdigest()
-```
-
-**Backend Authentication (`backend.py`)**
-
-```python
-import jwt
-from datetime import datetime, timedelta
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-
 SECRET_KEY = "your-secret-key-change-in-production"
-ALGORITHM = "HS256"
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+ALGORITHM  = "HS256"
 
 def create_token(user_id: int) -> str:
-    payload = {
-        "user_id": user_id,
-        "exp": datetime.utcnow() + timedelta(days=7)
-    }
+    payload = { "user_id": user_id, "exp": datetime.utcnow() + timedelta(days=7) }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 def verify_token(token: str) -> int:
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload["user_id"]
-    except:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    return payload["user_id"]  # raises HTTPException 401 on failure
 
-@app.post("/api/auth/register")
-def register(email: str, password: str, name: str):
-    if db.query(User).filter(User.email == email).first():
-        raise HTTPException(status_code=400, detail="Email already registered")
-    
-    user = User(email=email, name=name)
-    user.set_password(password)
-    db.add(user)
-    db.commit()
-    
-    token = create_token(user.id)
-    return {"token": token, "user": {"id": user.id, "email": user.email, "name": user.name}}
-
-@app.post("/api/auth/login")
-def login(email: str, password: str):
-    user = db.query(User).filter(User.email == email).first()
-    if not user or not user.verify_password(password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    token = create_token(user.id)
-    return {"token": token, "user": {"id": user.id, "email": user.email, "name": user.name}}
+@app.post("/api/auth/register")  # body: { email, password, name }
+@app.post("/api/auth/login")     # body: { email, password }
+# both return: { token, user: { id, email, name } }
 ```
 
-**Frontend Login Page (`frontend/src/pages/LoginPage.js`)**
-
+### Frontend
 ```javascript
-export default function LoginPage({ onLogin }) {
-  const [isRegister, setIsRegister] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
+// LoginPage.js
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  const endpoint = isRegister ? '/api/auth/register' : '/api/auth/login';
+  const res = await fetch(`http://localhost:8000${endpoint}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(isRegister ? { email, password, name } : { email, password })
+  });
+  if (res.ok) {
+    const data = await res.json();
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('user', JSON.stringify(data.user));
+    onLogin(data.user);  // navigates to dashboard
+  }
+};
+```
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    const endpoint = isRegister ? "/api/auth/register" : "/api/auth/login";
-    const body = isRegister 
-      ? { email, password, name } 
-      : { email, password };
-    
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    
-    if (res.ok) {
-      const data = await res.json();
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
-      onLogin(data.user);
-    }
-  };
-
-  return (
-    <div style={S.loginContainer}>
-      <h1>{isRegister ? "Create Account" : "Welcome Back"}</h1>
-      <form onSubmit={handleSubmit}>
-        {isRegister && (
-          <input placeholder="Name" value={name} onChange={e => setName(e.target.value)} />
-        )}
-        <input 
-          type="email" 
-          placeholder="Email" 
-          value={email} 
-          onChange={e => setEmail(e.target.value)} 
-        />
-        <input 
-          type="password" 
-          placeholder="Password" 
-          value={password} 
-          onChange={e => setPassword(e.target.value)} 
-        />
-        <button type="submit">{isRegister ? "Sign Up" : "Login"}</button>
-      </form>
-      <p onClick={() => setIsRegister(!isRegister)}>
-        {isRegister ? "Already have account? Login" : "Need account? Register"}
-      </p>
-    </div>
-  );
-}
+### Session persistence across reloads
+```javascript
+// App.js — on mount
+useEffect(() => {
+  const storedUser = localStorage.getItem('user');
+  if (storedUser) setUser(JSON.parse(storedUser));
+}, []);
 ```
 
 ---
 
-## 4. Report Graphs (Sessions Per User)
+## 4. Report Graphs
 
 ### Overview
-Displays visual graphs showing workout statistics, including total sessions, exercises performed, and progress over time.
+Progress visualisation with week/month/year time range selector. Two Chart.js charts + total stats.
 
-### Implementation
+### Backend (`GET /api/reports/{user_id}?range=week|month|year`)
+```python
+# Fills every day in range with 0 (no gaps in line chart)
+num_days = 7 if range == "week" else (30 if range == "month" else 365)
+today = datetime.now().date()
+labels = [(today - timedelta(days=num_days - 1 - i)).strftime("%Y-%m-%d") for i in range(num_days)]
+session_counts = [date_counts.get(d, 0) for d in labels]
 
-**Frontend - Charts (`frontend/src/pages/ReportsPage.js`)**
+# Best streak — all-time, consecutive active days
+active_days = sorted({s.created_at.date() for s in all_sessions}, reverse=True)
+# iterates counting runs of consecutive days...
 
-```javascript
-import { Bar, Line, Doughnut } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  LineElement,
-  PointElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend
-} from 'chart.js';
-
-ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Title, Tooltip, Legend);
-
-export default function ReportsPage({ user }) {
-  const [chartData, setChartData] = useState(null);
-  const [timeRange, setTimeRange] = useState('week'); // week, month, year
-
-  useEffect(() => {
-    fetch(`/api/reports/${user.id}?range=${timeRange}`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    })
-      .then(res => res.json())
-      .then(data => setChartData(data));
-  }, [user.id, timeRange]);
-
-  const sessionsChartData = {
-    labels: chartData?.labels || [],
-    datasets: [{
-      label: 'Sessions Completed',
-      data: chartData?.sessions || [],
-      backgroundColor: 'rgba(75, 192, 192, 0.6)',
-      borderColor: 'rgba(75, 192, 192, 1)',
-      borderWidth: 2
-    }]
-  };
-
-  const exerciseChartData = {
-    labels: chartData?.exercises?.map(e => e.name) || [],
-    datasets: [{
-      data: chartData?.exercises?.map(e => e.count) || [],
-      backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF']
-    }]
-  };
-
-  return (
-    <div style={S.reportsPage}>
-      <h1>Your Progress</h1>
-      
-      {/* Time Range Selector */}
-      <div style={S.timeSelector}>
-        <button onClick={() => setTimeRange('week')} className={timeRange === 'week' ? 'active' : ''}>Week</button>
-        <button onClick={() => setTimeRange('month')} className={timeRange === 'month' ? 'active' : ''}>Month</button>
-        <button onClick={() => setTimeRange('year')} className={timeRange === 'year' ? 'active' : ''}>Year</button>
-      </div>
-
-      {/* Sessions Over Time Chart */}
-      <div style={S.chartCard}>
-        <h2>Sessions Over Time</h2>
-        <Line data={sessionsChartData} options={{ responsive: true }} />
-      </div>
-
-      {/* Exercise Distribution Chart */}
-      <div style={S.chartRow}>
-        <div style={S.chartCard}>
-          <h2>Exercise Distribution</h2>
-          <Doughnut data={exerciseChartData} options={{ responsive: true }} />
-        </div>
-        
-        <div style={S.chartCard}>
-          <h2>Total Stats</h2>
-          <div style={S.statItems}>
-            <div>Total Sessions: {chartData?.total_sessions}</div>
-            <div>Total Reps: {chartData?.total_reps}</div>
-            <div>Total Time: {chartData?.total_time} min</div>
-            <div>Best Streak: {chartData?.best_streak} days</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+total_time = round(sum(s.duration or 0 for s in sessions) / 60, 1)  # minutes, 1 decimal
 ```
 
-**Backend Reports API (`backend.py`)**
+### Frontend (`ReportsPage.js`)
+- **Line chart** — sessions per day, filled, tension 0.4, sage green (`#00e676`)
+- **Doughnut chart** — exercise distribution by session count
+- **Stat cards** — Total Sessions, Total Reps, Total Time (MIN), Best Streak (DAYS)
 
-```python
-@app.get("/api/reports/{user_id}")
-def get_reports(user_id: int, range: str = "week", token: str = Header(...)):
-    verify_token(token)
-    
-    # Determine date range
-    today = datetime.now().date()
-    if range == "week":
-        start_date = today - timedelta(days=7)
-    elif range == "month":
-        start_date = today - timedelta(days=30)
-    else:  # year
-        start_date = today - timedelta(days=365)
-    
-    # Get sessions in range
-    sessions = db.query(Session).filter(
-        Session.user_id == user_id,
-        Session.created_at >= start_date
-    ).all()
-    
-    # Group by date for line chart
-    date_counts = {}
-    for session in sessions:
-        date_str = session.created_at.strftime("%Y-%m-%d")
-        date_counts[date_str] = date_counts.get(date_str, 0) + 1
-    
-    labels = sorted(date_counts.keys())
-    session_counts = [date_counts[d] for d in labels]
-    
-    # Exercise distribution
-    exercise_counts = {}
-    for session in sessions:
-        exercise_counts[session.exercise] = exercise_counts.get(session.exercise, 0) + 1
-    
-    exercises = [{"name": k, "count": v} for k, v in exercise_counts.items()]
-    
-    # Totals
-    total_reps = sum(s.rep_count for s in sessions)
-    total_time = sum(s.duration or 0 for s in sessions)
-    
-    return {
-        "labels": labels,
-        "sessions": session_counts,
-        "exercises": exercises,
-        "total_sessions": len(sessions),
-        "total_reps": total_reps,
-        "total_time": total_time,
-        "best_streak": calculate_best_streak(user_id)
-    }
+```javascript
+// ChartJS registration
+ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Title, Tooltip, Legend);
+
+const sessionsChartData = {
+  labels: chartData?.labels || [],
+  datasets: [{
+    label: 'Sessions Completed',
+    data: chartData?.sessions || [],
+    backgroundColor: 'rgba(0, 230, 118, 0.2)',
+    borderColor: 'rgba(0, 230, 118, 1)',
+    fill: true, tension: 0.4
+  }]
+};
 ```
 
 ---
 
-## Database Schema
+## 5. Plank Elevation Detection Bug Fix
+
+### Problem
+When lying flat on the floor, the shoulder→hip→ankle body line forms ~180°, which falls inside the valid plank range (165–185°). The code had no way to distinguish a real plank (body elevated off the floor on arms/elbows) from simply lying flat, because it only measured body straightness — not elevation.
+
+### Root cause
+The inclination check (`ang((shoulder, ankle), (ankle, vertical_ref))`) correctly rejects vertical postures but passes anything horizontal — including lying flat.
+
+### Fix
+In a real plank viewed from the side, the shoulder is raised off the ground, so its Y pixel coordinate is **smaller** than the ankle's Y pixel coordinate (Y increases downward in image coordinates). When lying flat, shoulder and ankle Y values are nearly equal.
+
+Added `MIN_ELEVATION = 40` threshold: `ankle[1] - shoulder[1]` must be ≥ 40 pixels for the plank to be considered elevated.
 
 ```python
-# sessions table
-class Session(Base):
-    __tablename__ = "sessions"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    exercise = Column(String)  # pushup, squat, lunges, plank
-    rep_count = Column(Integer)  # or plank duration in seconds
-    duration = Column(Integer, nullable=True)  # optional duration
-    video_path = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+# src/exercises/plank.py
+MIN_ELEVATION = 40  # ankle y must exceed shoulder y by this much
+
+# In process():
+elevation = ankle[1] - shoulder[1]
+if elevation < MIN_ELEVATION:
+    feedbacks.append(("Get into plank position!", "red"))
+    is_form_valid = False
 ```
+
+This check runs before the timer logic, so the timer will not start while lying flat.
 
 ---
 
 ## Summary
 
-| Feature | Technology | Key Files |
-|---------|------------|-----------|
-| Dashboard | React + FastAPI | DashboardPage.js, backend.py |
-| Video Recording | MediaRecorder API + FastAPI | WorkoutPage.js, backend.py |
-| User Login | JWT + SQLAlchemy | LoginPage.js, backend.py, models.py |
-| Report Graphs | Chart.js + FastAPI | ReportsPage.js, backend.py |
-
-All features use the existing WebSocket infrastructure for real-time workout tracking and can be integrated into the current application architecture.
+| Feature | Key Files | Notes |
+|---|---|---|
+| Dashboard | `DashboardPage.js`, `backend.py` | Stats + recent 5 sessions |
+| Video Recording | `WorkoutPage.js`, `backend.py` | Browser download MP4/WebM, metadata only to DB |
+| User Login | `LoginPage.js`, `backend.py`, `models.py` | JWT, 7-day expiry, localStorage |
+| Report Graphs | `ReportsPage.js`, `backend.py` | Line + doughnut, gap-filled daily labels, best streak |
+| Plank Fix | `src/exercises/plank.py` | Elevation check rejects lying flat |

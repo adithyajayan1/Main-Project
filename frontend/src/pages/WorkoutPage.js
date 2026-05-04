@@ -13,6 +13,7 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
   const [processedFrame, setProcessedFrame] = useState(null);
   const [camError, setCamError]             = useState(null);
   const [flashCount, setFlashCount]         = useState(false);
+  const [completionModal, setCompletionModal] = useState(null); // { count, exercise, duration }
 
   const videoRef    = useRef(null);
   const canvasRef   = useRef(null);
@@ -66,12 +67,15 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
     prevCount.current = count;
   }, [count, voiceOn, speak]);
 
-  // Auto-stop logic when target reached
+  // Show completion modal when target reached
   useEffect(() => {
     if (running && count >= targetReps && count !== 0) {
       const wait = setTimeout(() => {
         if (voiceOn) speak(`Workout complete! You reached ${targetReps}.`);
-        stopSession();
+        const finalCount = prevCount.current;
+        const duration = selected === 'plank' ? finalCount : Math.floor(finalCount * 3);
+        teardownSession();
+        setCompletionModal({ count: finalCount, exercise: selected, duration });
       }, 1000);
       return () => clearTimeout(wait);
     }
@@ -225,13 +229,6 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
                20, 50
              );
 
-             // Draw stage
-             if (data.stage) {
-                ctx.fillStyle = "#ff9100";
-                ctx.font = "bold 22px 'Orbitron', sans-serif";
-                ctx.fillText(`STAGE: ${data.stage}`, 20, 85);
-             }
-
              // Draw Feedback
              if (data.feedbacks && data.feedbacks.length > 0) {
                 const [msg, colorStr] = data.feedbacks[0];
@@ -252,41 +249,36 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
     ws.onclose = () => { setWsStatus("idle"); setRunning(false); };
   };
 
-  const stopSession = () => {
-    // 1. Stop video recording
+  const saveAndDownload = (exerciseName, finalCount, duration) => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
-
-      const currentCount = prevCount.current;
-      const duration = selected === 'plank' ? currentCount : Math.floor(currentCount * 3);
-
-      // Save session metadata to backend for stats
-      if (token) {
-        fetch('http://localhost:8000/api/sessions', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ exercise: selected, rep_count: currentCount, duration }),
-        }).catch(console.error);
-      }
-
-      setTimeout(() => {
-        const chunks = videoChunksRef.current;
-        if (chunks.length > 0) {
-          const mimeType = recordingMimeRef.current || 'video/webm';
-          const ext = mimeType === 'video/mp4' ? 'mp4' : 'webm';
-          const blob = new Blob(chunks, { type: mimeType });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `workout_${selected}_${currentCount}reps_${Date.now()}.${ext}`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }
-      }, 500);
     }
+    if (token) {
+      fetch('http://localhost:8000/api/sessions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exercise: exerciseName, rep_count: finalCount, duration }),
+      }).catch(console.error);
+    }
+    setTimeout(() => {
+      const chunks = videoChunksRef.current;
+      if (chunks.length > 0) {
+        const mimeType = recordingMimeRef.current || 'video/webm';
+        const ext = mimeType === 'video/mp4' ? 'mp4' : 'webm';
+        const blob = new Blob(chunks, { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `workout_${exerciseName}_${finalCount}reps_${Date.now()}.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    }, 500);
+  };
 
+  const teardownSession = () => {
     clearInterval(intervalRef.current);
     wsRef.current?.close();
     wsRef.current = null;
@@ -294,6 +286,14 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
     setRunning(false);
     setWsStatus("idle");
     setProcessedFrame(null);
+  };
+
+  // Manual stop — save immediately without modal
+  const stopSession = () => {
+    const currentCount = prevCount.current;
+    const duration = selected === 'plank' ? currentCount : Math.floor(currentCount * 3);
+    saveAndDownload(selected, currentCount, duration);
+    teardownSession();
   };
 
   const resetCount = () => {
@@ -492,6 +492,56 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
           <code style={{ background: "#2a0505", padding: "2px 6px", borderRadius: 4 }}>
             uvicorn backend:app --reload --port 8000
           </code>
+        </div>
+      )}
+
+      {completionModal && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)",
+          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
+        }}>
+          <div style={{
+            background: "#ffffff", borderRadius: 16, padding: "40px 48px",
+            minWidth: 340, textAlign: "center", boxShadow: "0 8px 40px rgba(0,0,0,0.25)",
+          }}>
+            <div style={{ fontSize: 48, marginBottom: 8 }}>🎯</div>
+            <h2 style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 22, color: "#1c1c1e", marginBottom: 6 }}>
+              TARGET REACHED!
+            </h2>
+            <p style={{ color: "#6b6b72", fontSize: 14, marginBottom: 24 }}>
+              {EXERCISES.find(e => e.id === completionModal.exercise)?.label} &nbsp;·&nbsp;{" "}
+              {completionModal.exercise === "plank"
+                ? `${completionModal.count}s held`
+                : `${completionModal.count} reps`}
+              &nbsp;·&nbsp; ~{Math.round(completionModal.duration / 60) || 1} min
+            </p>
+
+            <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+              <button
+                onClick={() => {
+                  saveAndDownload(completionModal.exercise, completionModal.count, completionModal.duration);
+                  setCompletionModal(null);
+                }}
+                style={{
+                  background: "#3d8c6e", color: "#fff", border: "none",
+                  borderRadius: 8, padding: "12px 24px", fontWeight: "700",
+                  fontSize: 14, cursor: "pointer", letterSpacing: "0.05em",
+                }}
+              >
+                SAVE & DOWNLOAD
+              </button>
+              <button
+                onClick={() => setCompletionModal(null)}
+                style={{
+                  background: "#f2f1ee", color: "#1c1c1e", border: "none",
+                  borderRadius: 8, padding: "12px 24px", fontWeight: "700",
+                  fontSize: 14, cursor: "pointer", letterSpacing: "0.05em",
+                }}
+              >
+                DISCARD
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

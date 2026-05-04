@@ -55,6 +55,11 @@ frontend/yarn-error.log*
 # React build output
 frontend/build/
 
+# SQLite (not used — project uses Supabase/Postgres)
+*.db
+*.sqlite
+*.sqlite3
+
 # Misc
 *.zip
 *.tar.gz
