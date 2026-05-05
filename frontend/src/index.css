@@ -17,12 +17,21 @@ code {
     monospace;
 }
 
+/* ── Hamburger nav ───────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .desktop-nav { display: none !important; }
+  .hamburger   { display: block !important; }
+}
+@media (min-width: 769px) {
+  .mobile-menu { display: none !important; }
+  .hamburger   { display: none !important; }
+}
+
 /* ── Responsive breakpoints ─────────────────────────────────────────────── */
 @media (max-width: 768px) {
 
   /* Header */
-  [data-el="header"] { padding: 10px 16px !important; flex-wrap: wrap; gap: 8px; }
-  [data-el="nav-links"] { gap: 2px !important; }
+  [data-el="header"] { padding: 10px 16px !important; }
   [data-el="logo-tag"] { display: none; }
 
   /* Landing */
