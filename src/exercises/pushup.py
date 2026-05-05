@@ -4,7 +4,7 @@ from src.utils import ang
 
 # ── Thresholds ────────────────────────────────────────────────────────────────
 ELBOW_UP          = 155   # arms extended — UP stage
-ELBOW_DOWN        = 90    # proper depth — rep counted
+ELBOW_DOWN        = 95    # proper depth — rep counted
 BODY_MIN          = 160   # shoulder→hip→ankle min (hips sagging)
 BODY_MAX          = 195   # shoulder→hip→ankle max (hips too high)
 ELBOW_FLARE_LIMIT = 80    # elbow→shoulder horizontal offset
@@ -40,6 +40,15 @@ def process(image, idx, state):
 
     is_form_valid = True
     ref_pt = ankle if ankle else knee
+
+    # Require feet AND hip in frame — without them inclination/body checks are
+    # blind and random arm movement (walking, gesturing) triggers false reps
+    if not ref_pt:
+        feedbacks.append(("Show full body — feet not visible!", "red"))
+        is_form_valid = False
+    if not hip:
+        feedbacks.append(("Show full body — hips not visible!", "red"))
+        is_form_valid = False
 
     # ── 0. HORIZONTAL INCLINATION ────────────────────────────────────────────
     if ref_pt:
@@ -92,11 +101,6 @@ def process(image, idx, state):
     if hip and opp_h and abs(hip[1] - opp_h[1]) > HIP_SYM_LIM:
         feedbacks.append(("Hips rotating - keep level!", "orange"))
 
-    horiz = (wrist[0] + 80, wrist[1])
-    forearm_angle = ang((elbow, wrist), (wrist, horiz))
-    if forearm_angle < 65 or forearm_angle > 115:
-        feedbacks.append(("Check wrist bend position!", "orange"))
-
     # ── 1. REP COUNTING ──────────────────────────────────────────────────────
     depth_pct   = float(np.clip(
         np.interp(elbow_angle, (ELBOW_DOWN, ELBOW_UP), (100, 0)), 0, 100))
@@ -104,20 +108,28 @@ def process(image, idx, state):
                 (elbow[0]+8, elbow[1]-10),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,0), 2)
 
+    going_down = elbow_angle < state.get('prev_elbow', elbow_angle + 1)
+    state['prev_elbow'] = elbow_angle
+
     if elbow_angle <= ELBOW_DOWN:
         state['stage'] = "DOWN"
         if is_form_valid:
             state['flag'] = True
             feedbacks.append(("Great depth, push up!", "green"))
         else:
+            state['flag'] = False  # bad form at bottom — don't count this rep
             feedbacks.append(("Fix form to count rep!", "orange"))
     elif elbow_angle < ELBOW_UP:
-        state['stage'] = "DOWN"
-        if is_form_valid:
+        if not is_form_valid:
+            state['flag'] = False  # form broke mid-rep
+        elif going_down and is_form_valid:
+            state['stage'] = "DOWN"
             feedbacks.append(("Go lower!", "orange"))
     else:
-        if state.get('flag'):
+        if state.get('flag') and is_form_valid:
             state['count'] += 1; state['flag'] = False
+        elif state.get('flag') and not is_form_valid:
+            state['flag'] = False  # reached top but form invalid — discard
         state['stage'] = "UP"
         if is_form_valid:
             feedbacks.append(("Arms extended: ready", "green"))
