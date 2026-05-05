@@ -353,26 +353,23 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
             ))}
           </div>
 
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: 30, alignItems: "center", gap: 15 }}>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 30, alignItems: "center", gap: 16 }}>
             <span style={{ fontSize: 13, fontWeight: "700", letterSpacing: "0.15em", color: "#c0bdb5", textTransform: "uppercase" }}>
               TARGET {selected === "plank" ? "TIME (SEC)" : "REPS"}:
             </span>
-            <input 
-              type="number" 
-              value={targetReps} 
-              onChange={e => setTargetReps(Math.max(1, Number(e.target.value)))} 
-              min="1"
-              max="999"
-              style={{
-                ...S.input,
-                width: 80, 
-                padding: "8px 0", 
-                textAlign: "center", 
-                fontSize: 20, 
-                fontWeight: "700",
-                color: "#3d8c6e", // Using the new theme accent color
-              }}
-            />
+            <div style={{ display: "flex", alignItems: "center", gap: 0, background: "#f7f6f3", border: "1px solid #e8e6e1", borderRadius: 12, overflow: "hidden" }}>
+              <button
+                onClick={() => setTargetReps(r => Math.max(1, r - (selected === "plank" ? 5 : 1)))}
+                style={{ width: 44, height: 44, background: "none", border: "none", fontSize: 20, color: "#6b6b72", cursor: "pointer", fontWeight: "400", lineHeight: 1, borderRight: "1px solid #e8e6e1" }}
+              >−</button>
+              <span style={{ minWidth: 64, textAlign: "center", fontSize: 22, fontWeight: "700", color: "#3d8c6e", fontFamily: "'DM Mono', monospace", userSelect: "none" }}>
+                {targetReps}
+              </span>
+              <button
+                onClick={() => setTargetReps(r => Math.min(999, r + (selected === "plank" ? 5 : 1)))}
+                style={{ width: 44, height: 44, background: "none", border: "none", fontSize: 20, color: "#6b6b72", cursor: "pointer", fontWeight: "400", lineHeight: 1, borderLeft: "1px solid #e8e6e1" }}
+              >+</button>
+            </div>
           </div>
 
           {camError && (
