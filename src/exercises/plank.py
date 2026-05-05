@@ -12,8 +12,8 @@ HIP_SAG_BAD      = 150   # below this: severely sagging
 HEAD_OFFSET      = 40    # nose y vs shoulder y: head position
 SHOULDER_WRIST_X = 50    # shoulder x vs wrist x: wrist placement
 ELBOW_STRAIGHT   = 160   # elbow angle: high plank straight arms
-ELBOW_BENT_MIN   = 80    # elbow angle: forearm plank
-ELBOW_BENT_MAX   = 100   # elbow angle: forearm plank
+ELBOW_BENT_MIN   = 70    # elbow angle: forearm plank
+ELBOW_BENT_MAX   = 110   # elbow angle: forearm plank
 SHOULDER_SYM_LIM = 25    # L/R shoulder y: body twist
 HIP_SYM_LIM      = 20    # L/R hip y: hip rotation
 NECK_ALIGN_LIM   = 35    # nose y vs shoulder: neck neutral
@@ -91,10 +91,26 @@ def process(image, idx, state):
         elif body_angle < PLANK_GOOD_MIN:
             feedbacks.append(("Hips slightly low", "orange"))
 
-    # HEAD POSITION
+    # Detect plank type from elbow angle so checks can be arm-position-aware
+    is_forearm_plank = False
+    if elbow and wrist:
+        elbow_angle = ang((shoulder, elbow), (elbow, wrist))
+        cv2.putText(image, f"El:{int(elbow_angle)}d",
+                    (elbow[0]+5, elbow[1]-8),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200,200,0), 1)
+        if elbow_angle > ELBOW_STRAIGHT - 10:
+            is_forearm_plank = False   # high plank
+        elif ELBOW_BENT_MIN <= elbow_angle <= ELBOW_BENT_MAX:
+            is_forearm_plank = True    # forearm plank
+        else:
+            feedbacks.append(("Check arm position!", "orange"))
+
+    # HEAD POSITION — forearm plank nose naturally sits below shoulder, so
+    # only flag extreme drops; high plank is stricter
     if nose:
         head_diff = nose[1] - shoulder[1]
-        if head_diff > HEAD_OFFSET:
+        drop_limit = HEAD_OFFSET * 2 if is_forearm_plank else HEAD_OFFSET
+        if head_diff > drop_limit:
             feedbacks.append(("Head dropping — look down and forward!", "red"))
             is_form_valid = False
         elif head_diff < -HEAD_OFFSET:
@@ -105,25 +121,13 @@ def process(image, idx, state):
         if neck_forward > NECK_ALIGN_LIM:
             feedbacks.append(("Neck forward — tuck chin!", "orange"))
 
-    # SHOULDER OVER WRIST
-    if wrist:
+    # SHOULDER OVER WRIST — only meaningful for high plank; forearm plank
+    # has wrists intentionally forward of shoulders
+    if wrist and not is_forearm_plank:
         cv2.line(image, shoulder, wrist, (100,200,255), 1)
         sw_diff = abs(shoulder[0] - wrist[0])
         if sw_diff > SHOULDER_WRIST_X:
             feedbacks.append(("Keep wrists under shoulders!", "orange"))
-
-    # ELBOW ANGLE
-    if elbow and wrist:
-        elbow_angle = ang((shoulder, elbow), (elbow, wrist))
-        cv2.putText(image, f"El:{int(elbow_angle)}d",
-                    (elbow[0]+5, elbow[1]-8),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200,200,0), 1)
-        if elbow_angle > ELBOW_STRAIGHT - 10:
-            pass  # high plank — fine
-        elif ELBOW_BENT_MIN <= elbow_angle <= ELBOW_BENT_MAX:
-            pass  # forearm plank — fine
-        else:
-            feedbacks.append(("Check arm position!", "orange"))
 
     # SHOULDER SYMMETRY
     if opp_s:
