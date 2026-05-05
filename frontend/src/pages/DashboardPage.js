@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { S } from "../styles";
-import { EXERCISES } from "../constants";
+import { EXERCISES, API_URL } from "../constants";
 
 const StatCard = ({ icon, label, value }) => (
   <div style={{ ...S.sessionCard, flexDirection: 'column', alignItems: 'center', gap: 10, padding: 30 }}>
@@ -30,7 +30,7 @@ export default function DashboardPage({ user, navigate }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`http://localhost:8000/api/dashboard/${user.id}`, {
+    fetch(`${API_URL}/api/dashboard/${user.id}`, {
       headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
     })
       .then(res => res.json())

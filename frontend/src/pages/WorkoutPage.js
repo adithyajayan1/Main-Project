@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { EXERCISES, WS_URL, COLOR } from "../constants";
+import { EXERCISES, WS_URL, COLOR, API_URL } from "../constants";
 import { S } from "../styles";
 
 export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsStatus, token }) {
@@ -278,7 +278,7 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
       mediaRecorderRef.current.stop();
     }
     if (token) {
-      fetch('http://localhost:8000/api/sessions', {
+      fetch(`${API_URL}/api/sessions`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ exercise: exerciseName, rep_count: finalCount, duration }),

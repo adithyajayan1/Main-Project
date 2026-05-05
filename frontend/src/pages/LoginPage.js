@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { S } from "../styles";
+import { API_URL } from "../constants";
 
 export default function LoginPage({ onLogin }) {
   const [isRegister, setIsRegister] = useState(false);
@@ -11,7 +12,7 @@ export default function LoginPage({ onLogin }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
-    const endpoint = isRegister ? "http://localhost:8000/api/auth/register" : "http://localhost:8000/api/auth/login";
+    const endpoint = isRegister ? `${API_URL}/api/auth/register` : `${API_URL}/api/auth/login`;
     const body = isRegister 
       ? { email, password, name } 
       : { email, password };

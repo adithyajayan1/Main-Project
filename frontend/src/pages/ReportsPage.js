@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { S } from "../styles";
+import { API_URL } from "../constants";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -23,7 +24,7 @@ export default function ReportsPage({ user }) {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`http://localhost:8000/api/reports/${user.id}?period=${timeRange}`, {
+    fetch(`${API_URL}/api/reports/${user.id}?period=${timeRange}`, {
       headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     })
       .then(res => res.json())
