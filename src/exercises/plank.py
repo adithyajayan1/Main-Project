@@ -29,20 +29,24 @@ def process(image, idx, state):
         shoulder, hip, ankle = idx[11], idx[23], idx[27]
         opp_s = idx.get(12); opp_h = idx.get(24)
         elbow = idx.get(13); wrist = idx.get(15)
+        knee = idx.get(25)
     elif 12 in idx and 24 in idx and 28 in idx:
         shoulder, hip, ankle = idx[12], idx[24], idx[28]
         opp_s = idx.get(11); opp_h = idx.get(23)
         elbow = idx.get(14); wrist = idx.get(16)
+        knee = idx.get(26)
     else:
         # fallback with knee
         if 11 in idx and 23 in idx and 25 in idx:
             shoulder, hip, ankle = idx[11], idx[23], idx[25]
             opp_s = idx.get(12); opp_h = idx.get(24)
             elbow = idx.get(13); wrist = idx.get(15)
+            knee = None  # ankle IS the knee in this fallback — no separate knee to compare
         elif 12 in idx and 24 in idx and 26 in idx:
             shoulder, hip, ankle = idx[12], idx[24], idx[26]
             opp_s = idx.get(11); opp_h = idx.get(23)
             elbow = idx.get(14); wrist = idx.get(16)
+            knee = None  # ankle IS the knee in this fallback — no separate knee to compare
         else:
             return image, state, [("No pose detected", "red"),
                                    ("Face camera from the side", "gray")], 0.0
@@ -81,6 +85,14 @@ def process(image, idx, state):
         elevation = ankle[1] - shoulder[1]
         if elevation < MIN_ELEVATION:
             feedbacks.append(("Get into plank position!", "red"))
+            is_form_valid = False
+
+    # KNEE PLANK REJECTION — in a full plank legs are straight so ankle_y > knee_y
+    # (ankle is below knee in the frame). In a knee plank the foot is raised,
+    # so ankle_y < knee_y. Reject it.
+    if knee:
+        if ankle[1] < knee[1] - 20:
+            feedbacks.append(("Knees on floor — extend legs fully!", "red"))
             is_form_valid = False
 
     # Hip must stay close to shoulder height — catches shoulder-up, waist-on-floor.
