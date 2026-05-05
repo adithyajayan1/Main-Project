@@ -7,6 +7,7 @@ from src.utils import ang
 PLANK_GOOD_MIN   = 165   # body line: perfect plank range min
 PLANK_GOOD_MAX   = 185   # body line: perfect plank range max
 PLANK_ACTIVE     = 158   # minimum body line to start timer
+GRACE_PERIOD     = 1.5   # seconds of bad form allowed before timer resets
 HIP_SAG_BAD      = 150   # below this: severely sagging
 HEAD_OFFSET      = 40    # nose y vs shoulder y: head position
 SHOULDER_WRIST_X = 50    # shoulder x vs wrist x: wrist placement
@@ -142,6 +143,7 @@ def process(image, idx, state):
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,165,0), 2)
 
     if body_angle >= PLANK_ACTIVE and is_form_valid:
+        state.pop('bad_since', None)
         if 'start_time' not in state:
             state['start_time'] = time.time()
         state['count'] = int(time.time() - state['start_time'])
@@ -149,7 +151,13 @@ def process(image, idx, state):
         if not any(f[1] == "red" or f[1] == "orange" for f in feedbacks):
             feedbacks.append(("Perfect plank alignment!", "green"))
     else:
-        state.pop('start_time', None)
+        now = time.time()
+        if 'bad_since' not in state:
+            state['bad_since'] = now
+        elapsed_bad = now - state['bad_since']
+        if elapsed_bad >= GRACE_PERIOD:
+            state.pop('start_time', None)
+            state.pop('bad_since', None)
         state['stage'] = "HOLD"
         feedbacks.append(("Fix form to start timer!", "orange"))
 
