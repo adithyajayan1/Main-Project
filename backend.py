@@ -1,5 +1,6 @@
 import base64
 import json
+import time
 import traceback
 from datetime import datetime, timedelta
 
@@ -240,6 +241,9 @@ async def websocket_endpoint(websocket: WebSocket, exercise_type: str):
                 state = {"count": 0, "stage": "UP", "flag": False}
                 continue
 
+            ts = payload.get("_ts")  # echo back for round-trip latency measurement
+            t0 = time.perf_counter()
+
             img_data = base64.b64decode(payload["frame"].split(",")[1])
             np_arr   = np.frombuffer(img_data, np.uint8)
             image    = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
@@ -249,8 +253,11 @@ async def websocket_endpoint(websocket: WebSocket, exercise_type: str):
 
             image = cv2.flip(image, 1)
             rgb   = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            t1 = time.perf_counter()  # end: decode+convert
+
             results = pose.process(rgb)
             image.flags.writeable = True
+            t2 = time.perf_counter()  # end: mediapipe inference
 
             mp_drawing.draw_landmarks(
                 image, results.pose_landmarks, mp_holistic.POSE_CONNECTIONS,
@@ -267,9 +274,29 @@ async def websocket_endpoint(websocket: WebSocket, exercise_type: str):
             except Exception:
                 traceback.print_exc()
                 feedbacks = [("Adjust your position", "orange")]
+            t3 = time.perf_counter()  # end: angle calc + exercise logic
 
             _, buffer = cv2.imencode('.jpg', image, [cv2.IMWRITE_JPEG_QUALITY, 70])
             encoded   = base64.b64encode(buffer).decode('utf-8')
+            t4 = time.perf_counter()  # end: annotation + encoding
+
+            # Accumulate timing stats and print every 100 frames
+            if not hasattr(websocket, '_timing'):
+                websocket._timing = {'decode': [], 'mediapipe': [], 'logic': [], 'encode': [], 'n': 0}
+            tm = websocket._timing
+            tm['decode'].append((t1 - t0) * 1000)
+            tm['mediapipe'].append((t2 - t1) * 1000)
+            tm['logic'].append((t3 - t2) * 1000)
+            tm['encode'].append((t4 - t3) * 1000)
+            tm['n'] += 1
+            if tm['n'] % 100 == 0:
+                def avg(lst): return round(sum(lst) / len(lst), 2)
+                print(f"[Timing @{tm['n']} frames]"
+                      f"  decode+convert={avg(tm['decode'])}ms"
+                      f"  mediapipe={avg(tm['mediapipe'])}ms"
+                      f"  logic={avg(tm['logic'])}ms"
+                      f"  encode={avg(tm['encode'])}ms"
+                      f"  server_total={avg([a+b+c+d for a,b,c,d in zip(tm['decode'],tm['mediapipe'],tm['logic'],tm['encode'])])}ms")
 
             await websocket.send_text(json.dumps({
                 "frame":     f"data:image/jpeg;base64,{encoded}",
@@ -277,6 +304,7 @@ async def websocket_endpoint(websocket: WebSocket, exercise_type: str):
                 "stage":     state.get('stage', ''),
                 "depth_pct": round(depth_pct, 1),
                 "feedbacks": feedbacks,
+                "_ts":       ts,
             }))
 
     except WebSocketDisconnect:

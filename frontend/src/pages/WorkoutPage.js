@@ -28,6 +28,9 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
   const videoChunksRef = useRef([]);
   const recordingMimeRef = useRef('');
 
+  // Latency measurement refs
+  const latencySamplesRef = useRef([]);
+
   // TTS refs
   const isSpeakingRef = useRef(false);
   const needsToSpeakRef = useRef(null);
@@ -197,7 +200,7 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
         intervalRef.current = setInterval(() => {
           if (ws.readyState !== WebSocket.OPEN) return;
           const frame = captureFrame();
-          if (frame) ws.send(JSON.stringify({ frame }));
+          if (frame) ws.send(JSON.stringify({ frame, _ts: Date.now() }));
         }, 100);
       }, 600);
     };
@@ -206,6 +209,20 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
       try {
         const data = JSON.parse(e.data);
         if (data.error) { setWsStatus("error"); return; }
+
+        // Latency measurement
+        if (data._ts) {
+          const rtt = Date.now() - data._ts;
+          latencySamplesRef.current.push(rtt);
+          if (latencySamplesRef.current.length % 50 === 0) {
+            const samples = latencySamplesRef.current;
+            const avg = (samples.reduce((a, b) => a + b, 0) / samples.length).toFixed(1);
+            const min = Math.min(...samples);
+            const max = Math.max(...samples);
+            console.log(`[Latency] samples=${samples.length} avg=${avg}ms min=${min}ms max=${max}ms`);
+          }
+        }
+
         setProcessedFrame(data.frame);
         setCount(data.count);
         setStage(data.stage);
