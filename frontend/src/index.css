@@ -16,3 +16,49 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+/* ── Responsive breakpoints ─────────────────────────────────────────────── */
+@media (max-width: 768px) {
+
+  /* Header */
+  [data-el="header"] { padding: 10px 16px !important; flex-wrap: wrap; gap: 8px; }
+  [data-el="nav-links"] { gap: 2px !important; }
+  [data-el="logo-tag"] { display: none; }
+
+  /* Landing */
+  [data-el="landing-cards"] { grid-template-columns: 1fr !important; max-width: 100% !important; }
+  [data-el="ex-preview-row"] { gap: 6px !important; }
+
+  /* Workout — exercise selector grid */
+  [data-el="ex-grid"] { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Workout — session layout: stack video above stats */
+  [data-el="session"] { grid-template-columns: 1fr !important; }
+
+  /* Tutorials grid */
+  [data-el="tut-grid"] { grid-template-columns: 1fr !important; }
+
+  /* Dashboard stats grid */
+  [data-el="stats-grid"] { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Reports */
+  [data-el="chart-row"] { grid-template-columns: 1fr !important; }
+
+  /* General padding reduction */
+  [data-el="main"] { padding: 16px !important; }
+  [data-el="dashboard"] { padding: 20px 16px !important; }
+  [data-el="reports-page"] { padding: 20px 16px !important; }
+  [data-el="tut-main"] { padding: 20px 16px !important; }
+  [data-el="selector-wrap"] { max-width: 100% !important; }
+}
+
+@media (max-width: 480px) {
+  /* Workout exercise grid — single column on very small screens */
+  [data-el="ex-grid"] { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Counter value smaller on phone */
+  [data-el="counter-val"] { font-size: 64px !important; }
+
+  /* Login card */
+  [data-el="login-container"] { margin: 40px 16px !important; padding: 28px 20px !important; }
+}

@@ -39,7 +39,7 @@ export default function LoginPage({ onLogin }) {
   };
 
   return (
-    <div style={S.loginContainer}>
+    <div style={S.loginContainer} data-el="login-container">
       <h1 style={{ color: "#fff", margin: 0, fontFamily: "'Orbitron', sans-serif" }}>
         {isRegister ? "CREATE ACCOUNT" : "WELCOME BACK"}
       </h1>

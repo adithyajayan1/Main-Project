@@ -11,18 +11,18 @@ export default function Header({ page, navigate, voiceOn, setVoiceOn, wsStatus, 
   };
 
   return (
-    <header style={S.header}>
+    <header style={S.header} data-el="header">
 
       {/* Left — logo + nav links */}
       <div style={S.headerLeft}>
         <button onClick={() => navigate("landing")} style={S.logoBtn}>
           <span style={S.logoA}>FORM</span>
           <span style={S.logoB}>FLEX</span>
-          <span style={S.logoTag}>FITNESS COACH</span>
+          <span style={S.logoTag} data-el="logo-tag">FITNESS COACH</span>
         </button>
 
         {/* Nav links */}
-        <nav style={S.navLinks}>
+        <nav style={S.navLinks} data-el="nav-links">
           <button
             onClick={() => navigate("landing")}
             style={S.navLink(page === "landing")}

@@ -48,12 +48,12 @@ export default function DashboardPage({ user, navigate }) {
   if (loading) return <div style={{...S.dashboard, textAlign: 'center', marginTop: 100}}>Loading...</div>;
 
   return (
-    <div style={S.dashboard}>
+    <div style={S.dashboard} data-el="dashboard">
       <h1 style={{ fontFamily: "'Orbitron', sans-serif", marginBottom: 30 }}>
         WELCOME BACK, <span style={{ color: '#00e676' }}>{user.name.toUpperCase()}</span>!
       </h1>
 
-      <div style={S.statsGrid}>
+      <div style={S.statsGrid} data-el="stats-grid">
         <StatCard icon="🔥" label="Streak" value={`${stats?.streak || 0} DAYS`} />
         <StatCard icon="🏋️" label="Total Workouts" value={stats?.total_workouts || 0} />
         <StatCard icon="⏱️" label="Total Time" value={`${stats?.total_minutes || 0} MIN`} />

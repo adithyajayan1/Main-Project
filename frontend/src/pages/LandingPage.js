@@ -17,7 +17,7 @@ export default function LandingPage({ navigate }) {
       </div>
 
       {/* Two main cards */}
-      <div className="fade-up-d1" style={S.landingCards}>
+      <div className="fade-up-d1" style={S.landingCards} data-el="landing-cards">
 
         <button onClick={() => navigate("workout")} style={S.landingCard("#00e676")}>
           <span style={S.landingCardIcon}>🏋️</span>
@@ -46,7 +46,7 @@ export default function LandingPage({ navigate }) {
       </div>
 
       {/* Exercise preview chips */}
-      <div className="fade-up-d2" style={S.exPreviewRow}>
+      <div className="fade-up-d2" style={S.exPreviewRow} data-el="ex-preview-row">
         {EXERCISES.map(ex => (
           <div key={ex.id} style={S.exPreviewChip}>
             <span>{ex.icon}</span>

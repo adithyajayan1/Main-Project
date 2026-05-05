@@ -55,7 +55,7 @@ export default function ReportsPage({ user }) {
   };
 
   return (
-    <div style={S.reportsPage}>
+    <div style={S.reportsPage} data-el="reports-page">
       <h1 style={{ fontFamily: "'Orbitron', sans-serif", marginBottom: 30 }}>YOUR PROGRESS</h1>
       
       {/* Time Range Selector */}
@@ -80,7 +80,7 @@ export default function ReportsPage({ user }) {
       </div>
 
       {/* Exercise Distribution Chart */}
-      <div style={S.chartRow}>
+      <div style={S.chartRow} data-el="chart-row">
         <div style={S.chartCard}>
           <h2 style={S.chartTitle}>DISTRIBUTION</h2>
           {loading ? (

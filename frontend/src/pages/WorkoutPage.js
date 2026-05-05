@@ -332,7 +332,7 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <main style={S.main}>
+    <main style={S.main} data-el="main">
 
       <video ref={videoRef} style={{ display: "none" }} muted playsInline autoPlay />
       <canvas ref={canvasRef} style={{ display: "none" }} />
@@ -340,10 +340,10 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
       <canvas ref={recordCanvasRef} width={640} height={480} style={{ display: "none" }} />
 
       {!running && (
-        <section style={S.selectorWrap}>
+        <section style={S.selectorWrap} data-el="selector-wrap">
           <p style={S.sectionLabel}>⚡ CHOOSE YOUR EXERCISE</p>
 
-          <div style={S.grid}>
+          <div style={S.grid} data-el="ex-grid">
             {EXERCISES.map(ex => (
               <button
                 key={ex.id}
@@ -409,7 +409,7 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
       )}
 
       {running && (
-        <section style={S.session}>
+        <section style={S.session} data-el="session">
 
           <div style={S.videoPanel}>
             <div style={S.videoBox}>
@@ -476,6 +476,7 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
               <p
                 className={`counter-val${flashCount ? " flash" : ""}`}
                 style={S.counterVal}
+                data-el="counter-val"
               >
                 {count}
               </p>

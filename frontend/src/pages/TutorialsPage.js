@@ -3,7 +3,7 @@ import { S } from "../styles";
 
 export default function TutorialsPage({ navigate }) {
   return (
-    <main style={S.tutMain}>
+    <main style={S.tutMain} data-el="tut-main">
 
       <div style={S.tutPageHeader}>
         <p style={S.sectionLabel}>🎓 EXERCISE TUTORIALS</p>
@@ -13,7 +13,7 @@ export default function TutorialsPage({ navigate }) {
         </p>
       </div>
 
-      <div style={S.tutGrid}>
+      <div style={S.tutGrid} data-el="tut-grid">
         {TUTORIALS.map((t, i) => (
           <div
             key={t.id}
