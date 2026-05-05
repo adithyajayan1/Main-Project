@@ -1,0 +1,27 @@
+# Render configuration file
+# This tells Render how to build and run the FormFlex application
+
+services:
+  - type: web
+    name: formflex-backend
+    env: python
+    plan: free
+    
+    # Build command - install Python dependencies
+    buildCommand: |
+      python -m pip install --upgrade pip
+      pip install -r requirements.txt
+    
+    # Start command - run uvicorn with proper host binding
+    startCommand: |
+      uvicorn backend:app --host 0.0.0.0 --port $PORT --reload
+    
+    # Health check path
+    healthCheckPath: /
+    
+    # Auto-deploy on push to main branch
+    autoDeploy: true
+    
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.13

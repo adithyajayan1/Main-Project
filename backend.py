@@ -314,6 +314,10 @@ async def websocket_endpoint(websocket: WebSocket, exercise_type: str):
     finally:
         pose.close()
 
-@app.get("/")
-def root():
+@app.get("/", include_in_schema=False)
+async def root():
+    return {"status": "GymLytics backend running"}
+
+@app.head("/", include_in_schema=False)
+async def root_head():
     return {"status": "GymLytics backend running"}
