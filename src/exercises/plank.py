@@ -19,6 +19,7 @@ HIP_SYM_LIM      = 20    # L/R hip y: hip rotation
 NECK_ALIGN_LIM   = 35    # nose y vs shoulder: neck neutral
 MIN_ELEVATION    = 40    # ankle y must be > shoulder y by this much (shoulder elevated off floor)
 MAX_HIP_DROP     = 60    # hip y must not be too far below shoulder y (catches shoulder-up, waist-on-floor)
+MIN_SUPPORT_DROP = 55    # wrist/elbow y must exceed shoulder y by this much (proves shoulder is elevated off floor)
 
 def process(image, idx, state):
     feedbacks = []
@@ -65,14 +66,24 @@ def process(image, idx, state):
         is_form_valid = False
 
     # ── 0b. ELEVATION CHECK (rejects lying flat or partial plank) ───────────
-    # Shoulder must be elevated above ankle level (ankle_y > shoulder_y).
-    elevation = ankle[1] - shoulder[1]
-    if elevation < MIN_ELEVATION:
-        feedbacks.append(("Get into plank position!", "red"))
-        is_form_valid = False
+    # In a real plank the shoulder is elevated: wrist/elbow are on the floor
+    # (high y) while shoulder is in the air (low y) → large positive gap.
+    # When lying flat both are on the floor → gap is near zero.
+    # This is camera-angle-independent unlike the old ankle-based check.
+    support_pt = wrist if wrist else elbow
+    if support_pt:
+        support_drop = support_pt[1] - shoulder[1]
+        if support_drop < MIN_SUPPORT_DROP:
+            feedbacks.append(("Get into plank position!", "red"))
+            is_form_valid = False
+    else:
+        # No arm landmarks — fall back to ankle-based check
+        elevation = ankle[1] - shoulder[1]
+        if elevation < MIN_ELEVATION:
+            feedbacks.append(("Get into plank position!", "red"))
+            is_form_valid = False
 
     # Hip must stay close to shoulder height — catches shoulder-up, waist-on-floor.
-    # In a real plank hip_y ≈ shoulder_y. If waist is on the floor, hip_y >> shoulder_y.
     hip_drop = hip[1] - shoulder[1]
     if hip_drop > MAX_HIP_DROP:
         feedbacks.append(("Raise your hips off the floor!", "red"))
