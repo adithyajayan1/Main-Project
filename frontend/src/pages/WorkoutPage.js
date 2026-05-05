@@ -60,15 +60,22 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Flash + speak on new rep
+  // Flash + speak on new rep/second
   useEffect(() => {
     if (count > prevCount.current) {
       setFlashCount(true);
       setTimeout(() => setFlashCount(false), 400);
-      if (voiceOn) speak(`${count}`);
+      if (voiceOn) {
+        if (selected === 'plank') {
+          // Only announce every 5 seconds to avoid TTS queue lag
+          if (count % 5 === 0) speak(`${count} seconds`);
+        } else {
+          speak(`${count}`);
+        }
+      }
     }
     prevCount.current = count;
-  }, [count, voiceOn, speak]);
+  }, [count, voiceOn, speak, selected]);
 
   // Show completion modal when target reached
   useEffect(() => {
