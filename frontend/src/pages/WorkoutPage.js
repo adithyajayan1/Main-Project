@@ -340,7 +340,7 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
             {EXERCISES.map(ex => (
               <button
                 key={ex.id}
-                onClick={() => setSelected(ex.id)}
+                onClick={() => { setSelected(ex.id); setTargetReps(ex.id === "plank" ? 10 : 10); }}
                 style={S.exCard(selected === ex.id)}
               >
                 <span style={S.exIcon}>{ex.icon}</span>
@@ -362,9 +362,22 @@ export default function WorkoutPage({ initialExercise, voiceOn, wsStatus, setWsS
                 onClick={() => setTargetReps(r => Math.max(1, r - (selected === "plank" ? 5 : 1)))}
                 style={{ width: 44, height: 44, background: "none", border: "none", fontSize: 20, color: "#6b6b72", cursor: "pointer", fontWeight: "400", lineHeight: 1, borderRight: "1px solid #e8e6e1" }}
               >−</button>
-              <span style={{ minWidth: 64, textAlign: "center", fontSize: 22, fontWeight: "700", color: "#3d8c6e", fontFamily: "'DM Mono', monospace", userSelect: "none" }}>
-                {targetReps}
-              </span>
+              <input
+                type="number"
+                min="1"
+                max="999"
+                value={targetReps}
+                onChange={e => {
+                  const v = parseInt(e.target.value, 10);
+                  if (!isNaN(v)) setTargetReps(Math.min(999, Math.max(1, v)));
+                }}
+                style={{
+                  width: 64, textAlign: "center", fontSize: 22, fontWeight: "700",
+                  color: "#3d8c6e", fontFamily: "'DM Mono', monospace",
+                  background: "none", border: "none", outline: "none",
+                  MozAppearance: "textfield",
+                }}
+              />
               <button
                 onClick={() => setTargetReps(r => Math.min(999, r + (selected === "plank" ? 5 : 1)))}
                 style={{ width: 44, height: 44, background: "none", border: "none", fontSize: 20, color: "#6b6b72", cursor: "pointer", fontWeight: "400", lineHeight: 1, borderLeft: "1px solid #e8e6e1" }}
